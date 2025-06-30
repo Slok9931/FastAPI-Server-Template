@@ -1,90 +1,118 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from src.models.permission import Permission
-from src.schemas.permission import PermissionCreate, PermissionResponse, PermissionUpdate
 from src.config.database import get_db
-from src.core.permissions import get_current_user, RoleChecker
-from src.models.user import User
+from src.schemas.permission import PermissionResponse, PermissionCreate, PermissionUpdate
+from src.schemas.user import MessageResponse
 from src.service.permission_service import PermissionService
+from src.models.user import User
+from src.core.permissions import get_current_user, AdminRequired
+from typing import List
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.post("/", response_model=PermissionResponse)
-def create_permission(
-    permission: PermissionCreate, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Create a new permission (Super Admin only)"""
-    if not current_user.has_permission("manage_permissions"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    return PermissionService.create_permission(db, permission)
-
 @router.get("/", response_model=List[PermissionResponse])
-def get_permissions(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    category: Optional[str] = Query(None),
+async def get_permissions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all permissions with pagination and optional category filter"""
-    if not current_user.has_permission("view_permissions"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    return PermissionService.get_all_permissions(db, skip=skip, limit=limit, category=category)
+    """Get all permissions"""
+    try:
+        permissions = PermissionService.get_all_permissions(db)
+        return [PermissionResponse.from_orm(permission) for permission in permissions]
+    except Exception as e:
+        logger.error(f"Error getting permissions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get permissions")
 
-@router.get("/categories")
-def get_permission_categories(
+@router.post("/", response_model=PermissionResponse)
+async def create_permission(
+    permission_data: PermissionCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(AdminRequired())
 ):
-    """Get all permission categories"""
-    if not current_user.has_permission("view_permissions"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    categories = PermissionService.get_permission_categories(db)
-    return {"categories": categories}
+    """Create new permission (Admin only)"""
+    try:
+        new_permission = PermissionService.create_permission(db, permission_data)
+        return PermissionResponse.from_orm(new_permission)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creating permission: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create permission")
 
 @router.get("/{permission_id}", response_model=PermissionResponse)
-def get_permission(
-    permission_id: int, 
+async def get_permission(
+    permission_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get specific permission"""
-    if not current_user.has_permission("view_permissions"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    permission = PermissionService.get_permission_by_id(db, permission_id)
-    if not permission:
-        raise HTTPException(status_code=404, detail="Permission not found")
-    return permission
+    """Get permission by ID"""
+    try:
+        permission = PermissionService.get_permission_by_id(db, permission_id)
+        if not permission:
+            raise HTTPException(status_code=404, detail="Permission not found")
+        return PermissionResponse.from_orm(permission)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting permission: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve permission")
 
 @router.put("/{permission_id}", response_model=PermissionResponse)
-def update_permission(
-    permission_id: int, 
-    permission_update: PermissionUpdate, 
+async def update_permission(
+    permission_id: int,
+    permission_update: PermissionUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(AdminRequired())
 ):
-    """Update permission information (Super Admin only)"""
-    if not current_user.has_permission("manage_permissions"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    return PermissionService.update_permission(db, permission_id, permission_update)
+    """Update permission (Admin only)"""
+    try:
+        updated_permission = PermissionService.update_permission(db, permission_id, permission_update)
+        if not updated_permission:
+            raise HTTPException(status_code=404, detail="Permission not found")
+        return PermissionResponse.from_orm(updated_permission)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating permission: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update permission")
 
-@router.delete("/{permission_id}")
-def delete_permission(
-    permission_id: int, 
+@router.delete("/{permission_id}", response_model=MessageResponse)
+async def delete_permission(
+    permission_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(AdminRequired())
+):
+    """Delete permission (Admin only)"""
+    try:
+        success = PermissionService.delete_permission(db, permission_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Permission not found")
+        return MessageResponse(
+            message=f"Permission {permission_id} deleted successfully",
+            success=True
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting permission: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete permission")
+
+@router.get("/category/{category}", response_model=List[PermissionResponse])
+async def get_permissions_by_category(
+    category: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete a permission (Super Admin only)"""
-    if not current_user.has_permission("manage_permissions"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    PermissionService.delete_permission(db, permission_id)
-    return {"message": "Permission deleted successfully"}
+    """Get permissions by category"""
+    try:
+        permissions = PermissionService.get_permissions_by_category(db, category)
+        return [PermissionResponse.from_orm(permission) for permission in permissions]
+    except Exception as e:
+        logger.error(f"Error getting permissions by category: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get permissions by category")

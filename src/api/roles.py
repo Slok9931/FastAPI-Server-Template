@@ -1,201 +1,144 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from src.models.role import Role
-from src.schemas.role import RoleCreate, RoleResponse, RoleUpdate, RoleResponseSimple
 from src.config.database import get_db
-from src.core.permissions import get_current_user
-from src.models.user import User
+from src.schemas.role import RoleResponse, RoleCreate, RoleUpdate
+from src.schemas.user import MessageResponse
 from src.service.role_service import RoleService
-from src.config.settings import settings
+from src.models.user import User
+from src.core.permissions import get_current_user, AdminRequired
+from typing import List
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
+@router.get("/", response_model=List[RoleResponse])
+async def get_roles(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all roles"""
+    try:
+        roles = RoleService.get_all_roles(db)
+        return [RoleResponse.from_orm(role) for role in roles]
+    except Exception as e:
+        logger.error(f"Error getting roles: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get roles")
+
 @router.post("/", response_model=RoleResponse)
-def create_role(
-    role: RoleCreate, 
+async def create_role(
+    role_data: RoleCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(AdminRequired())
 ):
-    """Create a new role with minimal permissions (others added via API)"""
-    if not current_user.has_permission("manage_roles"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    return RoleService.create_role(db, role)
-
-@router.post("/create-minimal", response_model=RoleResponse)
-def create_minimal_role(
-    role_name: str,
-    description: Optional[str] = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Create a role with only minimal permissions (get_user, update_own_profile, view_content)"""
-    if not current_user.has_permission("manage_roles"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    # Prevent creating super admin role
-    if role_name == settings.super_admin_role:
-        raise HTTPException(status_code=400, detail="Cannot create super admin role through this endpoint")
-    
-    role = RoleService.create_role_if_not_exists(db, role_name, description)
-    return role
-
-@router.get("/", response_model=List[RoleResponseSimple])
-def get_roles(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get all roles with pagination (without users details)"""
-    if not current_user.has_permission("view_roles"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    return RoleService.get_all_roles(db, skip=skip, limit=limit)
+    """Create new role (Admin only)"""
+    try:
+        new_role = RoleService.create_role(db, role_data)
+        return RoleResponse.from_orm(new_role)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creating role: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create role")
 
 @router.get("/{role_id}", response_model=RoleResponse)
-def get_role(
-    role_id: int, 
+async def get_role(
+    role_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get specific role (with users details)"""
-    if not current_user.has_permission("view_roles"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    role = RoleService.get_role_by_id(db, role_id)
-    if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
-    return role
+    """Get role by ID"""
+    try:
+        role = RoleService.get_role_by_id(db, role_id)
+        if not role:
+            raise HTTPException(status_code=404, detail="Role not found")
+        return RoleResponse.from_orm(role)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting role: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve role")
 
 @router.put("/{role_id}", response_model=RoleResponse)
-def update_role(
-    role_id: int, 
-    role_update: RoleUpdate, 
+async def update_role(
+    role_id: int,
+    role_update: RoleUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(AdminRequired())
 ):
-    """Update role information"""
-    if not current_user.has_permission("manage_roles"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    return RoleService.update_role(db, role_id, role_update)
+    """Update role (Admin only)"""
+    try:
+        updated_role = RoleService.update_role(db, role_id, role_update)
+        if not updated_role:
+            raise HTTPException(status_code=404, detail="Role not found")
+        return RoleResponse.from_orm(updated_role)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating role: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update role")
 
-@router.delete("/{role_id}")
-def delete_role(
-    role_id: int, 
+@router.delete("/{role_id}", response_model=MessageResponse)
+async def delete_role(
+    role_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(AdminRequired())
 ):
-    """Delete a role"""
-    if not current_user.has_permission("manage_roles"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    RoleService.delete_role(db, role_id)
-    return {"message": "Role deleted successfully"}
+    """Delete role (Admin only)"""
+    try:
+        success = RoleService.delete_role(db, role_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Role not found")
+        return MessageResponse(
+            message=f"Role {role_id} deleted successfully",
+            success=True
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting role: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete role")
 
-# ========== PERMISSION MANAGEMENT ENDPOINTS ==========
-
-@router.post("/{role_id}/permissions/{permission_id}", response_model=RoleResponse)
-def add_permission_to_role(
+@router.post("/{role_id}/permissions/{permission_id}", response_model=MessageResponse)
+async def add_permission_to_role(
     role_id: int,
     permission_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(AdminRequired())
 ):
-    """Add a single permission to role"""
-    if not current_user.has_permission("manage_roles"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    return RoleService.add_permission_to_role(db, role_id, permission_id)
+    """Add permission to role (Admin only)"""
+    try:
+        success = RoleService.add_permission_to_role(db, role_id, permission_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Role or permission not found")
+        return MessageResponse(
+            message=f"Permission {permission_id} added to role {role_id}",
+            success=True
+        )
+    except Exception as e:
+        logger.error(f"Error adding permission to role: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add permission to role")
 
-@router.delete("/{role_id}/permissions/{permission_id}", response_model=RoleResponse)
-def remove_permission_from_role(
+@router.delete("/{role_id}/permissions/{permission_id}", response_model=MessageResponse)
+async def remove_permission_from_role(
     role_id: int,
     permission_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(AdminRequired())
 ):
-    """Remove a permission from role"""
-    if not current_user.has_permission("manage_roles"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    return RoleService.remove_permission_from_role(db, role_id, permission_id)
-
-@router.post("/{role_id}/permissions/bulk", response_model=RoleResponse)
-def add_multiple_permissions_to_role(
-    role_id: int,
-    permission_ids: List[int],
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Add multiple permissions to role at once"""
-    if not current_user.has_permission("manage_roles"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    return RoleService.bulk_add_permissions_to_role(db, role_id, permission_ids)
-
-@router.put("/{role_id}/permissions", response_model=RoleResponse)
-def set_role_permissions(
-    role_id: int,
-    permission_ids: List[int],
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Set exact permissions for role (replaces all existing permissions except minimal ones)"""
-    if not current_user.has_permission("manage_roles"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    return RoleService.set_role_permissions(db, role_id, permission_ids)
-
-@router.get("/{role_id}/permissions")
-def get_role_permissions(
-    role_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get role's permissions"""
-    if not current_user.has_permission("view_roles"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    role = RoleService.get_role_by_id(db, role_id)
-    if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
-    
-    return {
-        "role_id": role_id, 
-        "role_name": role.name,
-        "permissions": role.permissions,
-        "permissions_count": len(role.permissions)
-    }
-
-@router.get("/{role_id}/available-permissions")
-def get_available_permissions_for_role(
-    role_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get permissions that can be added to this role (not already assigned)"""
-    if not current_user.has_permission("view_roles"):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    role = RoleService.get_role_by_id(db, role_id)
-    if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
-    
-    from src.models.permission import Permission
-    all_permissions = db.query(Permission).all()
-    role_permission_ids = [perm.id for perm in role.permissions]
-    
-    available_permissions = [
-        perm for perm in all_permissions 
-        if perm.id not in role_permission_ids
-    ]
-    
-    return {
-        "role_id": role_id,
-        "role_name": role.name,
-        "available_permissions": available_permissions,
-        "available_count": len(available_permissions)
-    }
+    """Remove permission from role (Admin only)"""
+    try:
+        success = RoleService.remove_permission_from_role(db, role_id, permission_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Role or permission not found")
+        return MessageResponse(
+            message=f"Permission {permission_id} removed from role {role_id}",
+            success=True
+        )
+    except Exception as e:
+        logger.error(f"Error removing permission from role: {e}")
+        raise HTTPException(status_code=500, detail="Failed to remove permission from role")

@@ -1,306 +1,114 @@
 from fastapi import Request, HTTPException, status
-from datetime import datetime, timedelta
-from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
-import asyncio
-import time
-import hashlib
-import logging
+from starlette.middleware.base import BaseHTTPMiddleware
 from src.config.settings import settings
+import time
+import logging
+from collections import defaultdict
+from typing import Dict, Tuple
+import asyncio
+import functools
 
 logger = logging.getLogger(__name__)
 
-class RateLimiter:
-    def __init__(self, max_requests: int = 100, window_seconds: int = 3600, cleanup_interval: int = 300):
-        self.max_requests = max_requests
-        self.window_seconds = window_seconds
-        self.cleanup_interval = cleanup_interval
-        self.requests: Dict[str, List[float]] = defaultdict(list)
-        self.blocked_ips: Dict[str, float] = {}
-        self.last_cleanup = time.time()
-    
-    def _cleanup_old_requests(self):
-        """Remove old request records to prevent memory leaks"""
-        current_time = time.time()
-        if current_time - self.last_cleanup < self.cleanup_interval:
-            return
-        
-        cutoff_time = current_time - self.window_seconds
-        
-        # Clean up request history
-        for client_id in list(self.requests.keys()):
-            self.requests[client_id] = [
-                req_time for req_time in self.requests[client_id]
-                if req_time > cutoff_time
-            ]
-            if not self.requests[client_id]:
-                del self.requests[client_id]
-        
-        # Clean up blocked IPs
-        for ip in list(self.blocked_ips.keys()):
-            if current_time - self.blocked_ips[ip] > self.window_seconds * 2:
-                del self.blocked_ips[ip]
-        
-        self.last_cleanup = current_time
-        logger.info(f"Rate limiter cleanup completed. Active clients: {len(self.requests)}")
-    
-    def _get_client_identifier(self, request: Request, user_id: Optional[int] = None) -> str:
-        """Generate a unique identifier for the client"""
-        # Use user ID if authenticated, otherwise use IP + User-Agent hash
-        if user_id:
-            return f"user:{user_id}"
-        
-        client_ip = self._get_real_ip(request)
-        user_agent = request.headers.get("user-agent", "")
-        identifier = f"{client_ip}:{hashlib.md5(user_agent.encode()).hexdigest()[:8]}"
-        return identifier
-    
-    def _get_real_ip(self, request: Request) -> str:
-        """Get the real client IP, considering proxies"""
-        # Check for common proxy headers
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
-        
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip
-        
-        return request.client.host if request.client else "unknown"
-    
-    def is_allowed(self, request: Request, user_id: Optional[int] = None) -> Tuple[bool, Dict]:
-        """Check if request is allowed and return rate limit info"""
-        self._cleanup_old_requests()
-        
-        client_id = self._get_client_identifier(request, user_id)
-        client_ip = self._get_real_ip(request)
-        current_time = time.time()
-        
-        # Check if IP is temporarily blocked
-        if client_ip in self.blocked_ips:
-            if current_time - self.blocked_ips[client_ip] < self.window_seconds:
-                return False, {
-                    "error": "IP temporarily blocked",
-                    "retry_after": int(self.window_seconds - (current_time - self.blocked_ips[client_ip]))
-                }
-            else:
-                del self.blocked_ips[client_ip]
-        
-        # Clean old requests for this client
-        cutoff_time = current_time - self.window_seconds
-        self.requests[client_id] = [
-            req_time for req_time in self.requests[client_id]
-            if req_time > cutoff_time
-        ]
-        
-        current_requests = len(self.requests[client_id])
-        
-        if current_requests >= self.max_requests:
-            # Block IP if too many requests
-            self.blocked_ips[client_ip] = current_time
-            logger.warning(f"Rate limit exceeded for {client_id} (IP: {client_ip})")
-            
-            return False, {
-                "error": "Rate limit exceeded",
-                "limit": self.max_requests,
-                "window": self.window_seconds,
-                "retry_after": self.window_seconds
-            }
-        
-        # Record this request
-        self.requests[client_id].append(current_time)
-        
-        return True, {
-            "limit": self.max_requests,
-            "remaining": self.max_requests - current_requests - 1,
-            "reset": int(current_time + self.window_seconds),
-            "window": self.window_seconds
-        }
-
-class AdvancedRateLimiter:
-    """Advanced rate limiter with NO hardcoded roles - uses environment configuration"""
+class RateLimitStore:
+    """In-memory rate limit store"""
     
     def __init__(self):
-        if not settings.rate_limit_enabled:
-            # Disable rate limiting by setting very high limits
-            self.limiters = {
-                "auth_login": RateLimiter(max_requests=999999, window_seconds=1),
-                "auth_register": RateLimiter(max_requests=999999, window_seconds=1),
-                "auth_refresh": RateLimiter(max_requests=999999, window_seconds=1),
-                "api_anonymous": RateLimiter(max_requests=999999, window_seconds=1),
-                "api_authenticated": RateLimiter(max_requests=999999, window_seconds=1),
-                "api_admin": RateLimiter(max_requests=999999, window_seconds=1),
-                "file_upload": RateLimiter(max_requests=999999, window_seconds=1),
-            }
-        else:
-            # Use configured limits from environment
-            self.limiters = {
-                "auth_login": RateLimiter(
-                    max_requests=settings.rate_limit_login_max, 
-                    window_seconds=settings.rate_limit_login_window,
-                    cleanup_interval=settings.rate_limit_cleanup_interval
-                ),
-                "auth_register": RateLimiter(
-                    max_requests=settings.rate_limit_register_max, 
-                    window_seconds=settings.rate_limit_register_window,
-                    cleanup_interval=settings.rate_limit_cleanup_interval
-                ),
-                "auth_refresh": RateLimiter(
-                    max_requests=10, 
-                    window_seconds=300,
-                    cleanup_interval=settings.rate_limit_cleanup_interval
-                ),
-                "api_anonymous": RateLimiter(
-                    max_requests=settings.rate_limit_api_anonymous_max, 
-                    window_seconds=settings.rate_limit_api_anonymous_window,
-                    cleanup_interval=settings.rate_limit_cleanup_interval
-                ),
-                "api_authenticated": RateLimiter(
-                    max_requests=settings.rate_limit_api_authenticated_max, 
-                    window_seconds=settings.rate_limit_api_authenticated_window,
-                    cleanup_interval=settings.rate_limit_cleanup_interval
-                ),
-                "api_admin": RateLimiter(
-                    max_requests=settings.rate_limit_api_admin_max, 
-                    window_seconds=settings.rate_limit_api_admin_window,
-                    cleanup_interval=settings.rate_limit_cleanup_interval
-                ),
-                "file_upload": RateLimiter(
-                    max_requests=20, 
-                    window_seconds=3600,
-                    cleanup_interval=settings.rate_limit_cleanup_interval
-                ),
-            }
+        self.requests: Dict[str, list] = defaultdict(list)
+        self.last_cleanup = time.time()
     
-    def get_limiter_key(self, request: Request, user_roles: List[str] = None) -> str:
-        """Determine which rate limiter to use based on endpoint and user - NO hardcoded roles"""
-        path = request.url.path
+    def is_rate_limited(self, key: str, max_requests: int, window_seconds: int) -> bool:
+        """Check if key is rate limited"""
+        now = time.time()
+        window_start = now - window_seconds
         
-        # Authentication endpoints
-        if path.startswith("/auth/login"):
-            return "auth_login"
-        elif path.startswith("/auth/register"):
-            return "auth_register"
-        elif path.startswith("/auth/refresh"):
-            return "auth_refresh"
-        elif path.startswith("/upload"):
-            return "file_upload"
+        # Clean old requests periodically
+        if now - self.last_cleanup > 300:  # Cleanup every 5 minutes
+            self._cleanup_old_requests(window_start)
+            self.last_cleanup = now
         
-        # API endpoints based on user role - DYNAMIC ADMIN DETECTION
-        if user_roles:
-            # Check if user has any admin roles (dynamically determined)
-            admin_roles = settings.admin_roles
-            if any(role in admin_roles for role in user_roles):
-                return "api_admin"
-            else:
-                return "api_authenticated"
+        # Get requests in current window
+        if key not in self.requests:
+            self.requests[key] = []
         
-        return "api_anonymous"
+        # Remove old requests
+        self.requests[key] = [req_time for req_time in self.requests[key] if req_time > window_start]
+        
+        # Check if rate limited
+        if len(self.requests[key]) >= max_requests:
+            return True
+        
+        # Add current request
+        self.requests[key].append(now)
+        return False
     
-    def check_rate_limit(self, request: Request, user_id: Optional[int] = None, 
-                        user_roles: List[str] = None) -> Tuple[bool, Dict]:
-        """Check rate limit for the request"""
-        limiter_key = self.get_limiter_key(request, user_roles)
-        limiter = self.limiters[limiter_key]
-        
-        allowed, info = limiter.is_allowed(request, user_id)
-        info["limiter_type"] = limiter_key
-        
-        return allowed, info
+    def _cleanup_old_requests(self, cutoff_time: float):
+        """Remove old requests to prevent memory leaks"""
+        for key in list(self.requests.keys()):
+            self.requests[key] = [req_time for req_time in self.requests[key] if req_time > cutoff_time]
+            if not self.requests[key]:
+                del self.requests[key]
 
-# Global advanced rate limiter instance
-advanced_limiter = AdvancedRateLimiter()
+# Global rate limit store
+rate_limit_store = RateLimitStore()
 
 async def rate_limit_middleware(request: Request, call_next):
-    """Enhanced rate limiting middleware with user context - NO hardcoded roles"""
-    
-    # Skip rate limiting for health checks and docs
-    if request.url.path in ["/health", settings.docs_url, settings.redoc_url, settings.openapi_url]:
-        return await call_next(request)
-    
-    # Skip if rate limiting is disabled
+    """Rate limiting middleware"""
     if not settings.rate_limit_enabled:
         return await call_next(request)
     
-    user_id = None
-    user_roles = []
+    # Get client IP
+    client_ip = request.client.host if request.client else "unknown"
     
-    # Try to get user context from token if present
-    try:
-        auth_header = request.headers.get("authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            from src.core.security import verify_token
-            from src.config.database import SessionLocal
-            from src.models.user import User
-            
-            token = auth_header.split(" ")[1]
-            payload = verify_token(token, "access")
-            
-            if payload:
-                username = payload.get("sub")
-                if username:
-                    db = SessionLocal()
-                    try:
-                        user = db.query(User).filter(User.username == username).first()
-                        if user and user.is_active:
-                            user_id = user.id
-                            user_roles = user.get_role_names()
-                    finally:
-                        db.close()
-    except Exception as e:
-        logger.debug(f"Error getting user context for rate limiting: {e}")
+    # Rate limit based on endpoint
+    path = request.url.path
+    method = request.method
+    
+    # Different limits for different endpoints
+    rate_limits = {
+        "POST /api/v1/auth/login": (5, 900),  # 5 requests per 15 minutes
+        "POST /api/v1/auth/register": (3, 3600),  # 3 requests per hour
+    }
+    
+    # Default API limits
+    default_limits = (100, 3600)  # 100 requests per hour for other endpoints
+    
+    # Get rate limit for this endpoint
+    endpoint_key = f"{method} {path}"
+    max_requests, window_seconds = rate_limits.get(endpoint_key, default_limits)
+    
+    # Create rate limit key
+    rate_limit_key = f"{client_ip}:{endpoint_key}"
     
     # Check rate limit
-    allowed, rate_info = advanced_limiter.check_rate_limit(request, user_id, user_roles)
-    
-    if not allowed:
-        logger.warning(
-            f"Rate limit exceeded: {request.client.host} "
-            f"- {request.method} {request.url.path} "
-            f"- User: {user_id or 'anonymous'} "
-            f"- Type: {rate_info.get('limiter_type')}"
-        )
-        
+    if rate_limit_store.is_rate_limited(rate_limit_key, max_requests, window_seconds):
+        logger.warning(f"Rate limit exceeded for {client_ip} on {endpoint_key}")
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "error": "Rate limit exceeded",
-                "message": rate_info.get("error", "Too many requests"),
-                "retry_after": rate_info.get("retry_after", 3600),
-                "limit": rate_info.get("limit"),
-                "window_seconds": rate_info.get("window")
-            },
-            headers={
-                "X-RateLimit-Limit": str(rate_info.get("limit", 0)),
-                "X-RateLimit-Remaining": "0",
-                "X-RateLimit-Reset": str(rate_info.get("reset", 0)),
-                "Retry-After": str(rate_info.get("retry_after", 3600))
-            }
+            detail=f"Rate limit exceeded. Max {max_requests} requests per {window_seconds} seconds.",
+            headers={"Retry-After": str(window_seconds)}
         )
     
-    # Add rate limit headers to response
     response = await call_next(request)
     
-    response.headers["X-RateLimit-Limit"] = str(rate_info.get("limit", 0))
-    response.headers["X-RateLimit-Remaining"] = str(rate_info.get("remaining", 0))
-    response.headers["X-RateLimit-Reset"] = str(rate_info.get("reset", 0))
-    response.headers["X-RateLimit-Window"] = str(rate_info.get("window", 0))
+    # Add rate limit headers
+    response.headers["X-RateLimit-Limit"] = str(max_requests)
+    response.headers["X-RateLimit-Window"] = str(window_seconds)
     
     return response
 
-# Decorator for additional endpoint-specific rate limiting
 def endpoint_rate_limit(max_requests: int, window_seconds: int):
-    """Decorator for additional endpoint-specific rate limiting"""
-    limiter = RateLimiter(max_requests, window_seconds)
-    
+    """Decorator for endpoint-specific rate limiting (documentation only - actual limiting is in middleware)"""
     def decorator(func):
-        async def wrapper(request: Request, *args, **kwargs):
-            allowed, info = limiter.is_allowed(request)
-            if not allowed:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Endpoint rate limit exceeded. Try again in {info.get('retry_after', 0)} seconds."
-                )
-            return await func(request, *args, **kwargs)
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            # The actual rate limiting is handled by the middleware
+            # This decorator is just for documentation and potential future use
+            return await func(*args, **kwargs)
+        
+        # Store rate limit info for potential middleware use
+        wrapper._rate_limit_max = max_requests
+        wrapper._rate_limit_window = window_seconds
+        
         return wrapper
     return decorator

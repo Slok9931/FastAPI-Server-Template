@@ -2,192 +2,187 @@ from sqlalchemy.orm import Session
 from src.models.user import User
 from src.models.role import Role
 from src.schemas.user import UserCreate, UserUpdate
-from src.core.security import get_password_hash, verify_password  # Add verify_password import
+from src.core.security import get_password_hash
+from src.config.settings import settings
 from src.service.role_service import RoleService
-from fastapi import HTTPException
-from typing import Optional, List
+from typing import List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 class UserService:
     
     @staticmethod
-    def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
-        """Get user by ID"""
-        return db.query(User).filter(User.id == user_id).first()
-    
-    @staticmethod
     def get_user_by_username(db: Session, username: str) -> Optional[User]:
         """Get user by username"""
-        return db.query(User).filter(User.username == username).first()
+        try:
+            return db.query(User).filter(User.username == username).first()
+        except Exception as e:
+            logger.error(f"Error getting user by username: {e}")
+            return None
     
     @staticmethod
     def get_user_by_email(db: Session, email: str) -> Optional[User]:
         """Get user by email"""
-        return db.query(User).filter(User.email == email).first()
+        try:
+            return db.query(User).filter(User.email == email).first()
+        except Exception as e:
+            logger.error(f"Error getting user by email: {e}")
+            return None
+    
+    @staticmethod
+    def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
+        """Get user by ID"""
+        try:
+            return db.query(User).filter(User.id == user_id).first()
+        except Exception as e:
+            logger.error(f"Error getting user by ID: {e}")
+            return None
     
     @staticmethod
     def get_all_users(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
         """Get all users with pagination"""
-        return db.query(User).offset(skip).limit(limit).all()
+        try:
+            return db.query(User).offset(skip).limit(limit).all()
+        except Exception as e:
+            logger.error(f"Error getting users: {e}")
+            return []
     
     @staticmethod
     def create_user(db: Session, user_data: UserCreate) -> User:
-        """Create a new user with roles that have minimal permissions"""
-        
-        # Check if user already exists
-        existing_user = db.query(User).filter(
-            (User.username == user_data.username) | (User.email == user_data.email)
-        ).first()
-        if existing_user:
-            raise HTTPException(status_code=400, detail="User already exists")
-        
-        # Create user
-        hashed_password = get_password_hash(user_data.password)
-        new_user = User(
-            username=user_data.username,
-            email=user_data.email,
-            hashed_password=hashed_password
-        )
-        
-        # Handle role assignment
-        user_roles = []
-        
-        if hasattr(user_data, 'role_names') and user_data.role_names:
-            # If role names are provided, create them with minimal permissions
-            for role_name in user_data.role_names:
-                role = RoleService.create_role_if_not_exists(db, role_name)
-                user_roles.append(role)
-        elif hasattr(user_data, 'role_ids') and user_data.role_ids:
-            # If role IDs are provided, use existing roles
-            user_roles = db.query(Role).filter(Role.id.in_(user_data.role_ids)).all()
-        else:
-            # Default role (will be created with minimal permissions if doesn't exist)
-            default_role = RoleService.get_or_create_default_role(db)
-            user_roles = [default_role]
-        
-        new_user.roles = user_roles
-        
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
-        
-        return new_user
-    
-    @staticmethod
-    def update_user(db: Session, user_id: int, user_update: UserUpdate) -> User:
-        """Update user information"""
-        db_user = UserService.get_user_by_id(db, user_id)
-        if not db_user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        # Check if new username is already taken (if updating username)
-        if user_update.username and user_update.username != db_user.username:
-            existing_user = UserService.get_user_by_username(db, user_update.username)
-            if existing_user:
-                raise HTTPException(status_code=400, detail="Username already taken")
-        
-        # Check if new email is already taken (if updating email)
-        if user_update.email and user_update.email != db_user.email:
-            existing_email = UserService.get_user_by_email(db, user_update.email)
-            if existing_email:
-                raise HTTPException(status_code=400, detail="Email already taken")
-        
-        # Update roles if provided
-        if user_update.role_ids is not None:
-            roles = db.query(Role).filter(Role.id.in_(user_update.role_ids)).all()
-            if len(roles) != len(user_update.role_ids):
-                raise HTTPException(status_code=400, detail="One or more invalid role IDs")
-            db_user.roles = roles
-        
-        # Update password if provided
-        if user_update.password:
-            db_user.hashed_password = get_password_hash(user_update.password)
-        
-        # Update other user fields
-        update_data = user_update.dict(exclude_unset=True, exclude={'role_ids', 'password'})
-        for field, value in update_data.items():
-            setattr(db_user, field, value)
-        
-        db.commit()
-        db.refresh(db_user)
-        return db_user
-    
-    @staticmethod
-    def add_role_to_user(db: Session, user_id: int, role_id: int) -> User:
-        """Add a role to user"""
-        db_user = UserService.get_user_by_id(db, user_id)
-        if not db_user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        role = db.query(Role).filter(Role.id == role_id).first()
-        if not role:
-            raise HTTPException(status_code=404, detail="Role not found")
-        
-        if role not in db_user.roles:
-            db_user.roles.append(role)
+        """Create a new user"""
+        try:
+            # Hash password
+            hashed_password = get_password_hash(user_data.password)
+            
+            # Create user
+            db_user = User(
+                username=user_data.username,
+                email=user_data.email,
+                hashed_password=hashed_password,
+                is_active=True
+            )
+            
+            # Assign roles
+            if user_data.role_ids:
+                roles = db.query(Role).filter(Role.id.in_(user_data.role_ids)).all()
+                db_user.roles = roles
+            elif user_data.role_names:
+                roles = db.query(Role).filter(Role.name.in_(user_data.role_names)).all()
+                db_user.roles = roles
+            else:
+                # Assign default role
+                default_role = RoleService.get_or_create_default_role(db)
+                db_user.roles = [default_role]
+            
+            db.add(db_user)
             db.commit()
             db.refresh(db_user)
-        
-        return db_user
+            
+            logger.info(f"User created: {db_user.username}")
+            return db_user
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error creating user: {e}")
+            raise
     
     @staticmethod
-    def remove_role_from_user(db: Session, user_id: int, role_id: int) -> User:
-        """Remove a role from user"""
-        db_user = UserService.get_user_by_id(db, user_id)
-        if not db_user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        role = db.query(Role).filter(Role.id == role_id).first()
-        if not role:
-            raise HTTPException(status_code=404, detail="Role not found")
-        
-        if role in db_user.roles:
-            db_user.roles.remove(role)
+    def update_user(db: Session, user_id: int, user_update: UserUpdate) -> Optional[User]:
+        """Update user"""
+        try:
+            db_user = db.query(User).filter(User.id == user_id).first()
+            if not db_user:
+                return None
+            
+            # Update fields
+            if user_update.username is not None:
+                db_user.username = user_update.username
+            
+            if user_update.email is not None:
+                db_user.email = user_update.email
+            
+            if user_update.password is not None:
+                db_user.hashed_password = get_password_hash(user_update.password)
+            
+            if user_update.is_active is not None:
+                db_user.is_active = user_update.is_active
+            
+            # Update roles
+            if user_update.role_ids is not None:
+                roles = db.query(Role).filter(Role.id.in_(user_update.role_ids)).all()
+                db_user.roles = roles
+            
             db.commit()
             db.refresh(db_user)
-        
-        return db_user
+            
+            logger.info(f"User updated: {db_user.username}")
+            return db_user
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error updating user: {e}")
+            return None
     
     @staticmethod
     def delete_user(db: Session, user_id: int) -> bool:
-        """Delete a user"""
-        db_user = UserService.get_user_by_id(db, user_id)
-        if not db_user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        db.delete(db_user)
-        db.commit()
-        return True
+        """Delete user"""
+        try:
+            db_user = db.query(User).filter(User.id == user_id).first()
+            if not db_user:
+                return False
+            
+            db.delete(db_user)
+            db.commit()
+            
+            logger.info(f"User deleted: {db_user.username}")
+            return True
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error deleting user: {e}")
+            return False
     
     @staticmethod
-    def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
-        """Authenticate user credentials"""
-        user = UserService.get_user_by_username(db, username)
-        if not user:
-            return None
-        if not verify_password(password, user.hashed_password):
-            return None
-        return user
+    def assign_role_to_user(db: Session, user_id: int, role_id: int) -> bool:
+        """Assign role to user"""
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            role = db.query(Role).filter(Role.id == role_id).first()
+            
+            if not user or not role:
+                return False
+            
+            if role not in user.roles:
+                user.roles.append(role)
+                db.commit()
+            
+            logger.info(f"Role '{role.name}' assigned to user '{user.username}'")
+            return True
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error assigning role to user: {e}")
+            return False
     
     @staticmethod
-    def deactivate_user(db: Session, user_id: int) -> User:
-        """Deactivate a user account"""
-        db_user = UserService.get_user_by_id(db, user_id)
-        if not db_user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        db_user.is_active = False
-        db.commit()
-        db.refresh(db_user)
-        return db_user
-    
-    @staticmethod
-    def activate_user(db: Session, user_id: int) -> User:
-        """Activate a user account"""
-        db_user = UserService.get_user_by_id(db, user_id)
-        if not db_user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        db_user.is_active = True
-        db.commit()
-        db.refresh(db_user)
-        return db_user
+    def remove_role_from_user(db: Session, user_id: int, role_id: int) -> bool:
+        """Remove role from user"""
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            role = db.query(Role).filter(Role.id == role_id).first()
+            
+            if not user or not role:
+                return False
+            
+            if role in user.roles:
+                user.roles.remove(role)
+                db.commit()
+            
+            logger.info(f"Role '{role.name}' removed from user '{user.username}'")
+            return True
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error removing role from user: {e}")
+            return False

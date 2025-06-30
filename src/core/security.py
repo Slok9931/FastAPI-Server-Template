@@ -1,72 +1,84 @@
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import HTTPException, status
-import secrets
-import bcrypt
 from src.config.settings import settings
+import logging
 
-# Enhanced password hashing with configurable rounds
-pwd_context = CryptContext(
-    schemes=["bcrypt"], 
-    deprecated="auto",
-    bcrypt__rounds=settings.password_hash_rounds
-)
+logger = logging.getLogger(__name__)
+
+# Password hashing context
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its hash"""
     try:
         return pwd_context.verify(plain_password, hashed_password)
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error verifying password: {e}")
         return False
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    """Hash a password"""
+    try:
+        return pwd_context.hash(password)
+    except Exception as e:
+        logger.error(f"Error hashing password: {e}")
+        raise
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
-    
-    # Add additional claims for security
-    to_encode.update({
-        "exp": expire,
-        "iat": datetime.utcnow(),
-        "type": "access"
-    })
-    
-    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
-    return encoded_jwt
+def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+    """Create JWT access token"""
+    try:
+        to_encode = data.copy()
+        
+        if expires_delta:
+            expire = datetime.utcnow() + expires_delta
+        else:
+            expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
+        
+        to_encode.update({"exp": expire})
+        encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+        
+        return encoded_jwt
+    except Exception as e:
+        logger.error(f"Error creating access token: {e}")
+        raise
 
-def create_refresh_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
-    to_encode.update({
-        "exp": expire,
-        "iat": datetime.utcnow(),
-        "type": "refresh"
-    })
-    return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+def create_refresh_token(data: Dict[str, Any]) -> str:
+    """Create JWT refresh token"""
+    try:
+        to_encode = data.copy()
+        expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
+        to_encode.update({"exp": expire, "type": "refresh"})
+        
+        encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+        return encoded_jwt
+    except Exception as e:
+        logger.error(f"Error creating refresh token: {e}")
+        raise
 
-def verify_token(token: str, token_type: str = "access"):
+def verify_token(token: str) -> Optional[Dict[str, Any]]:
+    """Verify and decode JWT token"""
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         
-        # Verify token type
-        if payload.get("type") != token_type:
-            return None
-            
-        # Check if token is expired
+        # Check if token has expired
         exp = payload.get("exp")
-        if exp is None or datetime.utcnow() > datetime.fromtimestamp(exp):
+        if exp and datetime.utcnow() > datetime.fromtimestamp(exp):
             return None
-            
+        
         return payload
-    except JWTError:
+    except JWTError as e:
+        logger.warning(f"JWT verification failed: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error verifying token: {e}")
         return None
 
-def generate_secure_secret_key():
-    """Generate a cryptographically secure secret key"""
-    return secrets.token_urlsafe(32)
+def decode_token(token: str) -> Optional[Dict[str, Any]]:
+    """Decode JWT token without verification (for debugging)"""
+    try:
+        return jwt.decode(token, options={"verify_signature": False})
+    except Exception as e:
+        logger.error(f"Error decoding token: {e}")
+        return None

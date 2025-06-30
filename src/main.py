@@ -1,67 +1,82 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from src.api import auth, users, roles, permissions
-from src.config.database import engine, Base
-from src.models import user, role, permission, user_role, role_permission
-from src.middleware.security_headers import SecurityHeadersMiddleware
-from src.middleware.rate_limiting import rate_limit_middleware
-from src.config.settings import settings
-import time
+from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 import logging
-import os
-from logging.handlers import RotatingFileHandler
+import time
 
-# Enhanced logging configuration from environment
-log_level = getattr(logging, settings.log_level.upper())
+# Import models to register them with SQLAlchemy
+from src.models import User, Role, Permission, user_roles, role_permissions
 
-# Create logs directory if it doesn't exist
-os.makedirs(os.path.dirname(settings.log_file_path), exist_ok=True)
+from src.api.auth import router as auth_router
+from src.api.users import router as users_router
+from src.api.roles import router as roles_router
+from src.api.permissions import router as permissions_router
+from src.config.database import engine, get_db
+from src.config.settings import settings
+from src.core.init_db import init_database
+from src.middleware.rate_limiting import rate_limit_middleware
+from sqlalchemy.orm import Session
 
-# Configure logging with rotation
-handlers = [logging.StreamHandler()]
-
-if settings.log_file_path:
-    file_handler = RotatingFileHandler(
-        settings.log_file_path,
-        maxBytes=settings.log_max_file_size,
-        backupCount=settings.log_backup_count
-    )
-    handlers.append(file_handler)
-
+# Configure logging
 logging.basicConfig(
-    level=log_level,
-    format=settings.log_format,
-    handlers=handlers
+    level=getattr(logging, settings.log_level.upper()),
+    format=settings.log_format
 )
-
 logger = logging.getLogger(__name__)
 
-# FastAPI application with environment configuration
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager"""
+    # Startup
+    logger.info("🚀 FastAPI Dynamic RBAC System starting up...")
+    logger.info(f"Application starting up in {settings.environment} environment...")
+    logger.info(f"Debug mode: {settings.debug}")
+    logger.info(f"Rate limiting: {'enabled' if settings.rate_limit_enabled else 'disabled'}")
+    logger.info(f"API documentation: {'enabled' if settings.debug else 'disabled'}")
+    
+    try:
+        # Initialize database
+        await init_database()
+        logger.info("✅ Database connection successful")
+        
+        # Create tables
+        from src.config.database import Base
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created successfully")
+        
+        logger.info(f"FastAPI Dynamic RBAC System v{settings.app_version} started successfully!")
+        
+    except Exception as e:
+        logger.error(f"❌ Startup failed: {e}")
+        raise
+    
+    yield
+    
+    # Shutdown
+    logger.info("Application shutting down...")
+
+# Create FastAPI application
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description=settings.app_description,
-    docs_url=settings.docs_url if settings.docs_enabled else None,  # Remove production check
-    redoc_url=settings.redoc_url if settings.docs_enabled else None,  # Remove production check
-    openapi_url=settings.openapi_url if settings.docs_enabled else None,
-    debug=settings.debug
+    debug=settings.debug,
+    docs_url="/docs" if settings.debug else None,
+    redoc_url="/redoc" if settings.debug else None,
+    lifespan=lifespan
 )
 
-# Security middleware
-if settings.security_headers_enabled:
-    app.add_middleware(SecurityHeadersMiddleware)
-
-# CORS middleware with environment configuration
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=settings.cors_allow_credentials,
-    allow_methods=settings.cors_allow_methods,
-    allow_headers=settings.cors_allow_headers,
-    expose_headers=settings.cors_expose_headers
+    allow_origins=settings.allowed_origins,
+    allow_credentials=settings.allow_credentials,
+    allow_methods=settings.allowed_methods,
+    allow_headers=settings.allowed_headers,
 )
 
-# Rate limiting middleware
+# Add rate limiting middleware
 if settings.rate_limit_enabled:
     app.middleware("http")(rate_limit_middleware)
 
@@ -70,110 +85,95 @@ if settings.rate_limit_enabled:
 async def log_requests(request: Request, call_next):
     start_time = time.time()
     
+    # Log request
     logger.info(
-        f"Request: {request.method} {request.url.path} "
-        f"- Client: {request.client.host if request.client else 'unknown'} "
-        f"- User-Agent: {request.headers.get('user-agent', 'unknown')[:50]}"
+        f"Request: {request.method} {request.url.path} - "
+        f"Client: {request.client.host if request.client else 'unknown'} - "
+        f"User-Agent: {request.headers.get('user-agent', 'unknown')[:100]}"
     )
     
-    response = await call_next(request)
-    
-    process_time = time.time() - start_time
-    logger.info(
-        f"Response: {response.status_code} "
-        f"- Time: {process_time:.3f}s "
-        f"- Path: {request.url.path}"
-    )
-    
-    response.headers["X-Process-Time"] = str(process_time)
-    return response
+    try:
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        
+        # Log response
+        logger.info(
+            f"Response: {response.status_code} - "
+            f"Time: {process_time:.3f}s - "
+            f"Path: {request.url.path}"
+        )
+        
+        return response
+        
+    except Exception as e:
+        process_time = time.time() - start_time
+        logger.error(
+            f"Request failed: {request.method} {request.url.path} - "
+            f"Error: {str(e)} - Time: {process_time:.3f}s"
+        )
+        raise
 
-# Include routers with API prefix if configured
-api_prefix = settings.api_prefix if settings.api_prefix != "/" else ""
+# Include routers
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
+app.include_router(users_router, prefix="/api/v1/users", tags=["Users"])
+app.include_router(roles_router, prefix="/api/v1/roles", tags=["Roles"])
+app.include_router(permissions_router, prefix="/api/v1/permissions", tags=["Permissions"])
 
-app.include_router(auth.router, prefix=f"{api_prefix}/auth", tags=["Authentication"])
-app.include_router(users.router, prefix=f"{api_prefix}/users", tags=["User Management"])
-app.include_router(roles.router, prefix=f"{api_prefix}/roles", tags=["Role Management"])
-app.include_router(permissions.router, prefix=f"{api_prefix}/permissions", tags=["Permission Management"])
-
-@app.on_event("startup")
-async def startup():
-    logger.info(f"Application starting up in {settings.environment} environment...")
-    logger.info(f"Debug mode: {settings.debug}")
-    logger.info(f"Rate limiting: {'enabled' if settings.rate_limit_enabled else 'disabled'}")
-    logger.info(f"API documentation: {'enabled' if settings.docs_enabled else 'disabled'}")
-    
-    # Database initialization with retry logic
-    max_retries = 5
-    retry_delay = 5
-    
-    for attempt in range(max_retries):
-        try:
-            Base.metadata.create_all(bind=engine)
-            logger.info("Database tables created successfully")
-            break
-        except Exception as e:
-            if attempt < max_retries - 1:
-                logger.warning(f"Failed to create tables (attempt {attempt + 1}/{max_retries}): {e}")
-                logger.info(f"Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-            else:
-                logger.error(f"Failed to create database tables after {max_retries} attempts: {e}")
-                raise e
-    
-    logger.info(f"{settings.app_name} v{settings.app_version} started successfully!")
-
-@app.on_event("shutdown")
-async def shutdown():
-    logger.info("Application shutting down...")
-
-@app.get("/", tags=["System"])
-async def root():
-    return {
-        "message": f"Welcome to {settings.app_name}!",
-        "version": settings.app_version,
-        "environment": settings.environment,
-        "docs": settings.docs_url if settings.docs_enabled and not settings.is_production else None,
-        "api_prefix": settings.api_prefix
-    }
-
-@app.get("/health", tags=["System"])
+# Health check endpoint
+@app.get("/health")
 async def health_check():
+    """Health check endpoint"""
     return {
         "status": "healthy",
-        "service": settings.app_name,
         "version": settings.app_version,
         "environment": settings.environment,
-        "timestamp": time.time()
+        "debug": settings.debug
     }
 
-@app.get("/config", tags=["System"])
-async def get_config():
-    """Get current configuration (non-sensitive values only)"""
+# Root endpoint
+@app.get("/")
+async def root():
+    """Root endpoint"""
     return {
-        "app_name": settings.app_name,
-        "version": settings.app_version,
-        "environment": settings.environment,
-        "debug": settings.debug,
-        "rate_limiting_enabled": settings.rate_limit_enabled,
-        "docs_enabled": settings.docs_enabled,
-        "api_prefix": settings.api_prefix,
-        "default_page_size": settings.default_page_size,
-        "max_page_size": settings.max_page_size,
-        "access_token_expire_minutes": settings.access_token_expire_minutes,
-        "user_registration_enabled": settings.user_registration_enabled
+        "message": f"Welcome to {settings.app_name} v{settings.app_version}",
+        "docs": "/docs" if settings.debug else "Documentation disabled in production",
+        "health": "/health",
+        "environment": settings.environment
     }
 
-if settings.rate_limit_enabled:
-    @app.get("/rate-limit-status", tags=["System"])
-    async def rate_limit_status(request: Request):
-        """Check current rate limit status"""
-        from src.middleware.rate_limiting import advanced_limiter
-        
-        allowed, info = advanced_limiter.check_rate_limit(request)
-        
-        return {
-            "allowed": allowed,
-            "rate_limit_info": info,
-            "client_ip": request.client.host if request.client else "unknown"
+# Global exception handler
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": exc.detail,
+            "status_code": exc.status_code,
+            "path": request.url.path,
+            "method": request.method
         }
+    )
+
+# Global exception handler for unexpected errors
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unexpected error: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal server error" if not settings.debug else str(exc),
+            "status_code": 500,
+            "path": request.url.path,
+            "method": request.method
+        }
+    )
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "src.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=settings.debug,
+        log_level=settings.log_level.lower()
+    )

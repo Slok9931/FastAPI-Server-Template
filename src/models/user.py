@@ -2,43 +2,39 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from src.config.database import Base
-from src.models.user_role import user_roles
+from src.models.associations import user_roles
 
 class User(Base):
-    __tablename__ = 'users'
-    __table_args__ = {'extend_existing': True}
+    __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    email = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
+    username = Column(String(50), unique=True, index=True, nullable=False)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Many-to-many relationship with roles
-    roles = relationship("Role", secondary=user_roles, back_populates="users")
-
+    # Relationships
+    roles = relationship("Role", secondary=user_roles, back_populates="users", lazy="selectin")
+    
     def __repr__(self):
-        return f"<User(id={self.id}, username={self.username})>"
+        return f"<User(id={self.id}, username='{self.username}', email='{self.email}')>"
     
     def has_role(self, role_name: str) -> bool:
         """Check if user has a specific role"""
         return any(role.name == role_name for role in self.roles)
     
-    def get_role_names(self) -> list:
-        """Get list of role names for this user"""
-        return [role.name for role in self.roles]
-    
     def has_permission(self, permission_name: str) -> bool:
-        """Check if user has a specific permission through their roles"""
+        """Check if user has a specific permission through any role"""
         for role in self.roles:
-            if role.has_permission(permission_name):
+            if any(perm.name == permission_name for perm in role.permissions):
                 return True
         return False
     
-    def get_all_permissions(self) -> list:
-        """Get all unique permissions from all user's roles"""
+    def get_permissions(self) -> set:
+        """Get all permissions for this user"""
         permissions = set()
         for role in self.roles:
-            permissions.update(role.get_permission_names())
-        return list(permissions)
+            for permission in role.permissions:
+                permissions.add(permission.name)
+        return permissions
