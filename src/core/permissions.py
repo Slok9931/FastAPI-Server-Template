@@ -54,9 +54,6 @@ async def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Log user access
-        logger.info(f"User access - User: {user.username} - IP: unknown - Path: unknown - Method: unknown")
-        
         return user
         
     except HTTPException:
@@ -69,8 +66,43 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+def has_permission(resource: str, action: str):
+    """
+    Check if current user has permission for a specific resource and action.
+    
+    Args:
+        resource (str): The resource name (e.g., 'user', 'role', 'permission')
+        action (str): The action ('read', 'create', 'update', 'delete')
+    
+    Returns:
+        User: The current user if they have permission
+        
+    Raises:
+        HTTPException: If user doesn't have permission
+    """
+    def permission_dependency(current_user: User = Depends(get_current_user)):
+        # Construct permission name
+        permission_name = f"{resource}:{action}"
+        
+        # Check if user has the required permission
+        if not current_user.has_permission(permission_name):
+            logger.warning(
+                f"Permission denied - User: {current_user.username}, "
+                f"Required: {permission_name}, "
+                f"User permissions: {list(current_user.get_permissions())}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission '{permission_name}' required for this action"
+            )
+        
+        logger.info(f"Permission granted - User: {current_user.username}, Permission: {permission_name}")
+        return current_user
+    
+    return permission_dependency
+
 def require_permission(permission_name: str):
-    """Decorator to require specific permission"""
+    """Legacy function - use has_permission instead"""
     def permission_dependency(current_user: User = Depends(get_current_user)):
         if not current_user.has_permission(permission_name):
             raise HTTPException(
@@ -92,7 +124,7 @@ def require_role(role_name: str):
     return role_dependency
 
 class AdminRequired:
-    """Dependency class for admin-only endpoints"""
+    """Legacy class - use has_permission instead"""
     def __call__(self, current_user: User = Depends(get_current_user)) -> User:
         if not (current_user.has_role("admin") or current_user.has_role("super_admin")):
             raise HTTPException(

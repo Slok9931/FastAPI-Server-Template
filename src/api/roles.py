@@ -5,7 +5,7 @@ from src.schemas.role import RoleResponse, RoleCreate, RoleUpdate
 from src.schemas.user import MessageResponse
 from src.service.role_service import RoleService
 from src.models.user import User
-from src.core.permissions import get_current_user, AdminRequired
+from src.core.permissions import get_current_user, has_permission
 from typing import List
 import logging
 
@@ -15,9 +15,9 @@ router = APIRouter()
 @router.get("/", response_model=List[RoleResponse])
 async def get_roles(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(has_permission("role", "read"))
 ):
-    """Get all roles"""
+    """Get all roles (Requires role:read permission)"""
     try:
         roles = RoleService.get_all_roles(db)
         return [RoleResponse.from_orm(role) for role in roles]
@@ -29,9 +29,9 @@ async def get_roles(
 async def create_role(
     role_data: RoleCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(AdminRequired())
+    current_user: User = Depends(has_permission("role", "create"))
 ):
-    """Create new role (Admin only)"""
+    """Create new role (Requires role:create permission)"""
     try:
         new_role = RoleService.create_role(db, role_data)
         return RoleResponse.from_orm(new_role)
@@ -45,9 +45,9 @@ async def create_role(
 async def get_role(
     role_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(has_permission("role", "read"))
 ):
-    """Get role by ID"""
+    """Get role by ID (Requires role:read permission)"""
     try:
         role = RoleService.get_role_by_id(db, role_id)
         if not role:
@@ -64,9 +64,9 @@ async def update_role(
     role_id: int,
     role_update: RoleUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(AdminRequired())
+    current_user: User = Depends(has_permission("role", "update"))
 ):
-    """Update role (Admin only)"""
+    """Update role (Requires role:update permission)"""
     try:
         updated_role = RoleService.update_role(db, role_id, role_update)
         if not updated_role:
@@ -84,9 +84,9 @@ async def update_role(
 async def delete_role(
     role_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(AdminRequired())
+    current_user: User = Depends(has_permission("role", "delete"))
 ):
-    """Delete role (Admin only)"""
+    """Delete role (Requires role:delete permission)"""
     try:
         success = RoleService.delete_role(db, role_id)
         if not success:
@@ -108,9 +108,9 @@ async def add_permission_to_role(
     role_id: int,
     permission_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(AdminRequired())
+    current_user: User = Depends(has_permission("role", "update"))
 ):
-    """Add permission to role (Admin only)"""
+    """Add permission to role (Requires role:update permission)"""
     try:
         success = RoleService.add_permission_to_role(db, role_id, permission_id)
         if not success:
@@ -128,9 +128,9 @@ async def remove_permission_from_role(
     role_id: int,
     permission_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(AdminRequired())
+    current_user: User = Depends(has_permission("role", "update"))
 ):
-    """Remove permission from role (Admin only)"""
+    """Remove permission from role (Requires role:update permission)"""
     try:
         success = RoleService.remove_permission_from_role(db, role_id, permission_id)
         if not success:

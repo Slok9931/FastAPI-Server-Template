@@ -1,211 +1,312 @@
 from sqlalchemy.orm import Session
-from src.config.database import SessionLocal, engine, Base
+from sqlalchemy import text
+from src.config.database import SessionLocal, engine
 from src.models.user import User
 from src.models.role import Role
 from src.models.permission import Permission
 from src.core.security import get_password_hash
-from src.config.settings import settings
+import logging
 
-def init_database():
-    """Initialize database with tables and default data"""
-    print("🚀 Initializing FastAPI Dynamic RBAC Database...")
+logger = logging.getLogger(__name__)
+
+def create_default_permissions(db: Session):
+    """Create only the required standardized permissions"""
     
-    # Create all tables
-    print("Creating database tables...")
-    Base.metadata.create_all(bind=engine)
-    print("✅ Database tables created successfully")
+    # Define only the 3 resources and 4 actions each (12 total)
+    resources = ["user", "role", "permission"]
+    actions = ["read", "create", "update", "delete"]
     
-    db = SessionLocal()
+    # Create standardized permissions for each resource
+    for resource in resources:
+        for action in actions:
+            permission_name = f"{resource}:{action}"
+            permission_description = f"{action.title()} {resource} resources"
+            
+            # Check if permission already exists
+            existing_permission = db.query(Permission).filter(Permission.name == permission_name).first()
+            if not existing_permission:
+                permission = Permission(
+                    name=permission_name,
+                    description=permission_description,
+                    category=resource
+                )
+                db.add(permission)
+                logger.info(f"Created permission: {permission_name}")
+
+def create_default_roles(db: Session):
+    """Create default roles"""
     
-    try:
-        # Check if database is already initialized
-        existing_permissions = db.query(Permission).first()
-        if existing_permissions:
-            print("⚠️  Database already initialized. Skipping initialization.")
-            return
-        
-        print("Creating default permissions...")
-        
-        # Create permissions directly without using service layer
-        permissions_data = [
-            # User Management
-            {"name": "create_user", "description": "Create new users", "category": "user_management"},
-            {"name": "get_users", "description": "View all users", "category": "user_management"},
-            {"name": "get_user", "description": "View user details", "category": "user_management"},
-            {"name": "update_user", "description": "Update user information", "category": "user_management"},
-            {"name": "delete_user", "description": "Delete users", "category": "user_management"},
-            {"name": "update_own_profile", "description": "Update own profile", "category": "user_management"},
-            
-            # Role Management
-            {"name": "manage_roles", "description": "Create, update, delete roles", "category": "role_management"},
-            {"name": "view_roles", "description": "View roles", "category": "role_management"},
-            
-            # Permission Management
-            {"name": "manage_permissions", "description": "Create, update, delete permissions", "category": "permission_management"},
-            {"name": "view_permissions", "description": "View permissions", "category": "permission_management"},
-            
-            # Content Management
-            {"name": "moderate_content", "description": "Moderate user content", "category": "content_management"},
-            {"name": "view_content", "description": "View content", "category": "content_management"},
-            {"name": "create_content", "description": "Create content", "category": "content_management"},
-            {"name": "edit_content", "description": "Edit content", "category": "content_management"},
-            {"name": "delete_content", "description": "Delete content", "category": "content_management"},
-            
-            # System Administration
-            {"name": "system_admin", "description": "Full system administration", "category": "system"},
-            {"name": "view_analytics", "description": "View system analytics", "category": "system"},
-            {"name": "manage_settings", "description": "Manage system settings", "category": "system"},
-        ]
-        
-        # Create permission objects
-        permission_objects = []
-        for perm_data in permissions_data:
-            permission = Permission(**perm_data)
-            db.add(permission)
-            permission_objects.append(permission)
-            print(f"  ✅ Created permission: {perm_data['name']}")
-        
-        # Commit permissions first
-        db.commit()
-        print(f"✅ Created {len(permissions_data)} permissions")
-        
-        print("Creating default roles...")
-        
-        # Get all permissions for super admin
-        all_permissions = db.query(Permission).all()
-        
-        # Create super admin role with all permissions
-        super_admin_role = Role(
-            name=settings.super_admin_role,
-            description="Super administrator with full system access",
+    # 1. Superadmin role
+    superadmin_role = db.query(Role).filter(Role.name == "superadmin").first()
+    if not superadmin_role:
+        superadmin_role = Role(
+            name="superadmin",
+            description="Super Administrator with all permissions",
             is_system_role=True
         )
-        super_admin_role.permissions = all_permissions
-        db.add(super_admin_role)
-        print(f"  ✅ Created super admin role with {len(all_permissions)} permissions")
-        
-        # Create default user role with minimal permissions
-        minimal_permission_names = ["update_own_profile", "view_content"]
-        minimal_permissions = db.query(Permission).filter(
-            Permission.name.in_(minimal_permission_names)
-        ).all()
-        
-        default_role = Role(
-            name=settings.default_user_role,
-            description="Default role for regular users with minimal permissions",
+        db.add(superadmin_role)
+        logger.info("Created superadmin role")
+    
+    # 2. Admin role
+    admin_role = db.query(Role).filter(Role.name == "admin").first()
+    if not admin_role:
+        admin_role = Role(
+            name="admin",
+            description="Administrator with all user permissions",
             is_system_role=True
         )
-        default_role.permissions = minimal_permissions
-        db.add(default_role)
-        print(f"  ✅ Created default user role with {len(minimal_permissions)} permissions")
-        
-        # Commit roles
-        db.commit()
-        
-        print("Creating default users...")
-        
-        # Create super admin user
-        super_admin_user = User(
+        db.add(admin_role)
+        logger.info("Created admin role")
+    
+    # 3. User role
+    user_role = db.query(Role).filter(Role.name == "user").first()
+    if not user_role:
+        user_role = Role(
+            name="user",
+            description="Basic user with read-only access",
+            is_system_role=True
+        )
+        db.add(user_role)
+        logger.info("Created user role")
+
+def create_default_users(db: Session):
+    """Create default users"""
+    
+    # Create superadmin user
+    superadmin = db.query(User).filter(User.username == "superadmin").first()
+    if not superadmin:
+        superadmin = User(
             username="superadmin",
             email="superadmin@gmail.com",
             hashed_password=get_password_hash("superadmin123"),
             is_active=True
         )
-        super_admin_user.roles = [super_admin_role]
-        db.add(super_admin_user)
-        print(f"  ✅ Created super admin user: {super_admin_user.username}")
-        
-        # Create test user
-        test_user = User(
-            username="testuser",
-            email="testuser@gmail.com",
-            hashed_password=get_password_hash("testuser123"),
+        db.add(superadmin)
+        logger.info("Created superadmin user")
+    
+    # Create admin user
+    admin_user = db.query(User).filter(User.username == "admin").first()
+    if not admin_user:
+        admin_user = User(
+            username="admin",
+            email="admin@gmail.com",
+            hashed_password=get_password_hash("admin123"),
             is_active=True
         )
-        test_user.roles = [default_role]
-        db.add(test_user)
-        print(f"  ✅ Created test user: {test_user.username}")
+        db.add(admin_user)
+        logger.info("Created admin user")
+    
+    # Create basic user
+    basic_user = db.query(User).filter(User.username == "user").first()
+    if not basic_user:
+        basic_user = User(
+            username="user",
+            email="user@gmail.com",
+            hashed_password=get_password_hash("user123"),
+            is_active=True
+        )
+        db.add(basic_user)
+        logger.info("Created basic user")
+
+def create_role_permission_associations(db: Session):
+    """Create role-permission associations using SQL"""
+    
+    try:
+        # Insert role_permissions for superadmin (all 12 permissions)
+        superadmin_query = text("""
+            INSERT INTO role_permissions (role_id, permission_id)
+            SELECT 
+                (SELECT id FROM roles WHERE name = 'superadmin') as role_id,
+                p.id as permission_id
+            FROM permissions p
+            WHERE NOT EXISTS (
+                SELECT 1 FROM role_permissions rp 
+                WHERE rp.role_id = (SELECT id FROM roles WHERE name = 'superadmin') 
+                AND rp.permission_id = p.id
+            )
+        """)
+        db.execute(superadmin_query)
+        logger.info("Created role-permission associations for superadmin")
         
-        # Final commit
-        db.commit()
+        # Insert role_permissions for admin (only user permissions)
+        admin_query = text("""
+            INSERT INTO role_permissions (role_id, permission_id)
+            SELECT 
+                (SELECT id FROM roles WHERE name = 'admin') as role_id,
+                p.id as permission_id
+            FROM permissions p
+            WHERE p.name IN ('user:read', 'user:create', 'user:update', 'user:delete')
+            AND NOT EXISTS (
+                SELECT 1 FROM role_permissions rp 
+                WHERE rp.role_id = (SELECT id FROM roles WHERE name = 'admin') 
+                AND rp.permission_id = p.id
+            )
+        """)
+        db.execute(admin_query)
+        logger.info("Created role-permission associations for admin")
         
-        print("\n🎉 Database initialization completed successfully!")
-        print("\n📋 Default Credentials:")
-        print("  🔐 Super Admin:")
-        print("    Username: superadmin")
-        print("    Password: superadmin123")
-        print("    Email: superadmin@example.com")
-        print("    Permissions: ALL")
-        print("\n  👤 Test User:")
-        print("    Username: testuser")
-        print("    Password: testuser123")
-        print("    Email: testuser@example.com")
-        print("    Permissions: update_own_profile, view_content")
-        
-        print("\n🌐 Access URLs:")
-        print("  📱 API: http://localhost:8000")
-        print("  📚 API Docs: http://localhost:8000/docs")
-        print("  🔄 Alternative Docs: http://localhost:8000/redoc")
-        print("  💚 Health Check: http://localhost:8000/health")
-        
-        print("\n🛡️ System Roles:")
-        print(f"  📋 Super Admin Role: {settings.super_admin_role}")
-        print(f"  👥 Default User Role: {settings.default_user_role}")
-        
-        print("\n✨ Features:")
-        print("  🔹 Dynamic role creation via API")
-        print("  🔹 New roles get minimal permissions by default")
-        print("  🔹 Use API endpoints to add more permissions")
-        print("  🔹 Comprehensive RBAC system ready!")
+        # Insert role_permissions for user (only user:read permission)
+        user_query = text("""
+            INSERT INTO role_permissions (role_id, permission_id)
+            SELECT 
+                (SELECT id FROM roles WHERE name = 'user') as role_id,
+                p.id as permission_id
+            FROM permissions p
+            WHERE p.name = 'user:read'
+            AND NOT EXISTS (
+                SELECT 1 FROM role_permissions rp 
+                WHERE rp.role_id = (SELECT id FROM roles WHERE name = 'user') 
+                AND rp.permission_id = p.id
+            )
+        """)
+        db.execute(user_query)
+        logger.info("Created role-permission associations for user")
         
     except Exception as e:
-        print(f"❌ Error during database initialization: {e}")
-        db.rollback()
+        logger.error(f"Error creating role-permission associations: {e}")
         raise
-    finally:
-        db.close()
 
-def check_database_status():
-    """Check if database is properly initialized"""
-    print("🔍 Checking database status...")
+def create_user_role_associations(db: Session):
+    """Create user-role associations using SQL"""
     
-    db = SessionLocal()
     try:
-        # Check tables exist and have data
-        permission_count = db.query(Permission).count()
-        role_count = db.query(Role).count()
-        user_count = db.query(User).count()
+        # Assign superadmin role to superadmin user
+        superadmin_user_query = text("""
+            INSERT INTO user_roles (user_id, role_id)
+            SELECT 
+                (SELECT id FROM users WHERE username = 'superadmin') as user_id,
+                (SELECT id FROM roles WHERE name = 'superadmin') as role_id
+            WHERE NOT EXISTS (
+                SELECT 1 FROM user_roles ur 
+                WHERE ur.user_id = (SELECT id FROM users WHERE username = 'superadmin') 
+                AND ur.role_id = (SELECT id FROM roles WHERE name = 'superadmin')
+            )
+        """)
+        db.execute(superadmin_user_query)
+        logger.info("Assigned superadmin role to superadmin user")
         
-        print(f"📊 Database Status:")
-        print(f"  Permissions: {permission_count}")
-        print(f"  Roles: {role_count}")
-        print(f"  Users: {user_count}")
+        # Assign admin role to admin user
+        admin_user_query = text("""
+            INSERT INTO user_roles (user_id, role_id)
+            SELECT 
+                (SELECT id FROM users WHERE username = 'admin') as user_id,
+                (SELECT id FROM roles WHERE name = 'admin') as role_id
+            WHERE NOT EXISTS (
+                SELECT 1 FROM user_roles ur 
+                WHERE ur.user_id = (SELECT id FROM users WHERE username = 'admin') 
+                AND ur.role_id = (SELECT id FROM roles WHERE name = 'admin')
+            )
+        """)
+        db.execute(admin_user_query)
+        logger.info("Assigned admin role to admin user")
         
-        if permission_count > 0 and role_count > 0 and user_count > 0:
-            print("✅ Database is properly initialized!")
-            return True
-        else:
-            print("⚠️  Database appears to be incomplete")
-            return False
+        # Assign user role to basic user
+        basic_user_query = text("""
+            INSERT INTO user_roles (user_id, role_id)
+            SELECT 
+                (SELECT id FROM users WHERE username = 'user') as user_id,
+                (SELECT id FROM roles WHERE name = 'user') as role_id
+            WHERE NOT EXISTS (
+                SELECT 1 FROM user_roles ur 
+                WHERE ur.user_id = (SELECT id FROM users WHERE username = 'user') 
+                AND ur.role_id = (SELECT id FROM roles WHERE name = 'user')
+            )
+        """)
+        db.execute(basic_user_query)
+        logger.info("Assigned user role to basic user")
+        
+    except Exception as e:
+        logger.error(f"Error creating user-role associations: {e}")
+        raise
+
+def init_database():
+    """Initialize database with default data"""
+    try:
+        # Create database tables
+        from src.config.database import Base
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created successfully")
+        
+        # Create default data
+        db = SessionLocal()
+        try:
+            # Step 1: Create permissions
+            create_default_permissions(db)
+            db.commit()
+            logger.info("Permissions created successfully")
+            
+            # Step 2: Create roles
+            create_default_roles(db)
+            db.commit()
+            logger.info("Roles created successfully")
+            
+            # Step 3: Create users
+            create_default_users(db)
+            db.commit()
+            logger.info("Users created successfully")
+            
+            # Step 4: Create role-permission associations
+            create_role_permission_associations(db)
+            db.commit()
+            logger.info("Role-permission associations created successfully")
+            
+            # Step 5: Create user-role associations
+            create_user_role_associations(db)
+            db.commit()
+            logger.info("User-role associations created successfully")
+            
+            # Verify the data was created correctly
+            verify_database_data(db)
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error creating default data: {e}")
+            raise
+        finally:
+            db.close()
             
     except Exception as e:
-        print(f"❌ Error checking database: {e}")
-        return False
-    finally:
-        db.close()
+        logger.error(f"Database initialization failed: {e}")
+        raise
 
+def verify_database_data(db: Session):
+    """Verify that the database was initialized correctly"""
+    
+    # Check permissions
+    permissions_count = db.query(Permission).count()
+    logger.info(f"Total permissions created: {permissions_count}")
+    
+    # Check roles
+    roles_count = db.query(Role).count()
+    logger.info(f"Total roles created: {roles_count}")
+    
+    # Check users
+    users_count = db.query(User).count()
+    logger.info(f"Total users created: {users_count}")
+    
+    # Check role-permission associations
+    role_perm_query = text("""
+        SELECT r.name, COUNT(rp.permission_id) as permission_count 
+        FROM roles r 
+        LEFT JOIN role_permissions rp ON r.id = rp.role_id 
+        GROUP BY r.name
+    """)
+    role_perm_results = db.execute(role_perm_query).fetchall()
+    for result in role_perm_results:
+        logger.info(f"Role '{result[0]}' has {result[1]} permissions")
+    
+    # Check user-role associations
+    user_role_query = text("""
+        SELECT u.username, COUNT(ur.role_id) as role_count 
+        FROM users u 
+        LEFT JOIN user_roles ur ON u.id = ur.user_id 
+        GROUP BY u.username
+    """)
+    user_role_results = db.execute(user_role_query).fetchall()
+    for result in user_role_results:
+        logger.info(f"User '{result[0]}' has {result[1]} roles")
+
+# For direct execution
 if __name__ == "__main__":
-    try:
-        # Initialize database
-        init_database()
-        
-        # Verify initialization
-        print("\n" + "="*50)
-        check_database_status()
-        
-        print("\n🚀 FastAPI Dynamic RBAC System is ready!")
-        print("You can now start using the API endpoints.")
-        
-    except Exception as e:
-        print(f"\n❌ Database initialization failed: {e}")
-        exit(1)
+    init_database()
+    print("Database initialized successfully!")

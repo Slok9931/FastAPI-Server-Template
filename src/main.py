@@ -14,7 +14,7 @@ from src.api.roles import router as roles_router
 from src.api.permissions import router as permissions_router
 from src.config.database import engine, get_db
 from src.config.settings import settings
-from src.core.init_db import init_database
+from init_db import init_database
 from src.middleware.rate_limiting import rate_limit_middleware
 from sqlalchemy.orm import Session
 
@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
     
     try:
         # Initialize database
-        await init_database()
+        init_database()
         logger.info("✅ Database connection successful")
         
         # Create tables
