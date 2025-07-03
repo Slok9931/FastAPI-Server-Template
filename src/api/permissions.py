@@ -23,7 +23,7 @@ async def get_permissions(
         return [PermissionResponse.from_orm(permission) for permission in permissions]
     except Exception as e:
         logger.error(f"Error getting permissions: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get permissions")
+        raise HTTPException(status_code=500, detail="Unable to retrieve permissions at this time")
 
 @router.post("/", response_model=PermissionResponse)
 async def create_permission(
@@ -36,10 +36,12 @@ async def create_permission(
         new_permission = PermissionService.create_permission(db, permission_data)
         return PermissionResponse.from_orm(new_permission)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        if "already exists" in str(e).lower():
+            raise HTTPException(status_code=400, detail="Permission name already exists")
+        raise HTTPException(status_code=400, detail="Invalid permission information provided")
     except Exception as e:
         logger.error(f"Error creating permission: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create permission")
+        raise HTTPException(status_code=500, detail="Unable to create permission")
 
 @router.get("/get-one/{permission_id}", response_model=PermissionResponse)
 async def get_permission(
@@ -57,7 +59,7 @@ async def get_permission(
         raise
     except Exception as e:
         logger.error(f"Error getting permission: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve permission")
+        raise HTTPException(status_code=500, detail="Unable to retrieve permission information")
 
 @router.put("/{permission_id}", response_model=PermissionResponse)
 async def update_permission(
@@ -73,12 +75,14 @@ async def update_permission(
             raise HTTPException(status_code=404, detail="Permission not found")
         return PermissionResponse.from_orm(updated_permission)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        if "cannot be modified" in str(e).lower():
+            raise HTTPException(status_code=400, detail="System permissions cannot be modified")
+        raise HTTPException(status_code=400, detail="Invalid permission information provided")
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error updating permission: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update permission")
+        raise HTTPException(status_code=500, detail="Unable to update permission")
 
 @router.delete("/{permission_id}", response_model=MessageResponse)
 async def delete_permission(
@@ -92,16 +96,20 @@ async def delete_permission(
         if not success:
             raise HTTPException(status_code=404, detail="Permission not found")
         return MessageResponse(
-            message=f"Permission {permission_id} deleted successfully",
+            message="Permission deleted successfully",
             success=True
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        if "cannot be deleted" in str(e).lower():
+            raise HTTPException(status_code=400, detail="System permissions cannot be deleted")
+        if "still assigned" in str(e).lower():
+            raise HTTPException(status_code=400, detail="Cannot delete permission that is assigned to roles")
+        raise HTTPException(status_code=400, detail="Permission cannot be deleted")
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error deleting permission: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete permission")
+        raise HTTPException(status_code=500, detail="Unable to delete permission")
 
 @router.get("/category/{category}", response_model=List[PermissionResponse])
 async def get_permissions_by_category(
@@ -115,7 +123,7 @@ async def get_permissions_by_category(
         return [PermissionResponse.from_orm(permission) for permission in permissions]
     except Exception as e:
         logger.error(f"Error getting permissions by category: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get permissions by category")
+        raise HTTPException(status_code=500, detail="Unable to retrieve permissions for this category")
 
 @router.get("/my-permissions", response_model=List[str])
 async def get_my_permissions(
@@ -127,4 +135,4 @@ async def get_my_permissions(
         return sorted(list(permissions))
     except Exception as e:
         logger.error(f"Error getting user permissions: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get user permissions")
+        raise HTTPException(status_code=500, detail="Unable to retrieve your permissions")

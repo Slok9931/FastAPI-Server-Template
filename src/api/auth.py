@@ -32,7 +32,7 @@ async def register(
         if UserService.get_user_by_username(db, user_data.username):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already registered"
+                detail="Username already exists"
             )
         
         # Check if email already exists
@@ -54,7 +54,7 @@ async def register(
         logger.error(f"Registration error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Registration failed"
+            detail="Unable to create account at this time"
         )
 
 @router.post("/public-register", response_model=UserResponse)
@@ -68,7 +68,7 @@ async def public_register(
         if UserService.get_user_by_username(db, user_data.username):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already registered"
+                detail="Username already exists"
             )
         
         # Check if email already exists
@@ -94,7 +94,7 @@ async def public_register(
         logger.error(f"Public registration error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Registration failed"
+            detail="Unable to create account at this time"
         )
 
 @router.post("/login", response_model=Token)
@@ -123,7 +123,7 @@ async def login(
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User account is disabled"
+                detail="Account is disabled"
             )
         
         # Create tokens
@@ -151,7 +151,7 @@ async def login(
         logger.error(f"Login error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Login failed"
+            detail="Unable to sign in at this time"
         )
 
 @router.post("/refresh", response_model=Token)
@@ -166,7 +166,7 @@ async def refresh_token(
         if not payload:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid refresh token"
+                detail="Invalid or expired token"
             )
         
         # Check if it's a refresh token
@@ -181,7 +181,7 @@ async def refresh_token(
         if not username:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token payload"
+                detail="Invalid token"
             )
         
         # Get user
@@ -189,7 +189,7 @@ async def refresh_token(
         if not user or not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found or inactive"
+                detail="User account not found or inactive"
             )
         
         # Create new access token
@@ -212,7 +212,7 @@ async def refresh_token(
         logger.error(f"Token refresh error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Token refresh failed"
+            detail="Unable to refresh token at this time"
         )
 
 @router.post("/logout", response_model=MessageResponse)
@@ -221,8 +221,6 @@ async def logout(
 ):
     """User logout (Requires authentication)"""
     try:
-        # In a real implementation, you might want to blacklist the token
-        # For now, we just log the logout
         logger.info(f"User logged out: {current_user.username}")
         
         return MessageResponse(
@@ -234,7 +232,7 @@ async def logout(
         logger.error(f"Logout error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Logout failed"
+            detail="Unable to log out at this time"
         )
 
 @router.post("/change-password", response_model=MessageResponse)
@@ -260,7 +258,7 @@ async def change_password(
         if not updated_user:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update password"
+                detail="Unable to update password"
             )
         
         logger.info(f"Password changed for user: {current_user.username}")
@@ -276,7 +274,7 @@ async def change_password(
         logger.error(f"Password change error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Password change failed"
+            detail="Unable to change password at this time"
         )
 
 @router.get("/me", response_model=UserResponse)
@@ -313,4 +311,4 @@ async def get_current_user_permissions(
         
     except Exception as e:
         logger.error(f"Error getting user permissions: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get user permissions")
+        raise HTTPException(status_code=500, detail="Unable to retrieve user permissions")

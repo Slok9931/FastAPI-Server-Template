@@ -24,7 +24,7 @@ async def get_users(
         return [UserResponse.from_orm(user) for user in users]
     except Exception as e:
         logger.error(f"Error getting users: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get users")
+        raise HTTPException(status_code=500, detail="Unable to retrieve users at this time")
 
 @router.get("/get-one/{user_id}", response_model=UserResponse)
 async def get_user(
@@ -42,7 +42,7 @@ async def get_user(
         raise
     except Exception as e:
         logger.error(f"Error getting user: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get user")
+        raise HTTPException(status_code=500, detail="Unable to retrieve user information")
 
 @router.post("/", response_model=UserResponse)
 async def create_user(
@@ -55,10 +55,12 @@ async def create_user(
         new_user = UserService.create_user(db, user_data)
         return UserResponse.from_orm(new_user)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        if "already exists" in str(e).lower():
+            raise HTTPException(status_code=400, detail="Username or email already exists")
+        raise HTTPException(status_code=400, detail="Invalid user information provided")
     except Exception as e:
         logger.error(f"Error creating user: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create user")
+        raise HTTPException(status_code=500, detail="Unable to create user account")
 
 @router.put("/get-one/{user_id}", response_model=UserResponse)
 async def update_user(
@@ -77,7 +79,7 @@ async def update_user(
         raise
     except Exception as e:
         logger.error(f"Error updating user: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update user")
+        raise HTTPException(status_code=500, detail="Unable to update user information")
 
 @router.delete("/{user_id}", response_model=MessageResponse)
 async def delete_user(
@@ -88,7 +90,7 @@ async def delete_user(
     """Delete user (Requires user:delete permission)"""
     try:
         if user_id == current_user.id:
-            raise HTTPException(status_code=400, detail="Cannot delete yourself")
+            raise HTTPException(status_code=400, detail="You cannot delete your own account")
         
         success = UserService.delete_user(db, user_id)
         if not success:
@@ -102,7 +104,7 @@ async def delete_user(
         raise
     except Exception as e:
         logger.error(f"Error deleting user: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete user")
+        raise HTTPException(status_code=500, detail="Unable to delete user account")
 
 @router.post("/{user_id}/roles/{role_id}", response_model=MessageResponse)
 async def assign_role_to_user(
@@ -117,12 +119,14 @@ async def assign_role_to_user(
         if not success:
             raise HTTPException(status_code=404, detail="User or role not found")
         return MessageResponse(
-            message=f"Role {role_id} assigned to user {user_id}",
+            message="Role assigned to user successfully",
             success=True
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error assigning role to user: {e}")
-        raise HTTPException(status_code=500, detail="Failed to assign role to user")
+        raise HTTPException(status_code=500, detail="Unable to assign role to user")
 
 @router.delete("/{user_id}/roles/{role_id}", response_model=MessageResponse)
 async def remove_role_from_user(
@@ -137,12 +141,14 @@ async def remove_role_from_user(
         if not success:
             raise HTTPException(status_code=404, detail="User or role not found")
         return MessageResponse(
-            message=f"Role {role_id} removed from user {user_id}",
+            message="Role removed from user successfully",
             success=True
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error removing role from user: {e}")
-        raise HTTPException(status_code=500, detail="Failed to remove role from user")
+        raise HTTPException(status_code=500, detail="Unable to remove role from user")
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_profile(
@@ -161,14 +167,14 @@ async def update_current_user_profile(
     try:
         # Users can only update their own basic info, not roles
         if user_update.role_ids is not None:
-            raise HTTPException(status_code=403, detail="Cannot modify your own roles")
+            raise HTTPException(status_code=403, detail="You cannot modify your own roles")
         
         updated_user = UserService.update_user(db, current_user.id, user_update)
         if not updated_user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="User profile not found")
         return UserResponse.from_orm(updated_user)
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error updating user profile: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update profile")
+        raise HTTPException(status_code=500, detail="Unable to update your profile")
