@@ -4,7 +4,6 @@ from src.models.role import Role
 from src.schemas.user import UserCreate, UserUpdate
 from src.core.security import get_password_hash
 from src.config.settings import settings
-from src.service.role_service import RoleService
 from typing import List, Optional
 import logging
 
@@ -50,8 +49,18 @@ class UserService:
     
     @staticmethod
     def create_user(db: Session, user_data: UserCreate) -> User:
-        """Create a new user"""
+        """Create a new user (for admin/authenticated registration)"""
         try:
+            # Check if username already exists
+            existing_user = db.query(User).filter(User.username == user_data.username).first()
+            if existing_user:
+                raise ValueError(f"Username '{user_data.username}' already exists")
+            
+            # Check if email already exists  
+            existing_email = db.query(User).filter(User.email == user_data.email).first()
+            if existing_email:
+                raise ValueError(f"Email '{user_data.email}' already exists")
+            
             # Hash password
             hashed_password = get_password_hash(user_data.password)
             
@@ -63,6 +72,9 @@ class UserService:
                 is_active=True
             )
             
+            db.add(db_user)
+            db.flush()
+            
             # Assign roles
             if user_data.role_ids:
                 roles = db.query(Role).filter(Role.id.in_(user_data.role_ids)).all()
@@ -71,20 +83,75 @@ class UserService:
                 roles = db.query(Role).filter(Role.name.in_(user_data.role_names)).all()
                 db_user.roles = roles
             else:
-                # Assign default role
-                default_role = RoleService.get_or_create_default_role(db)
-                db_user.roles = [default_role]
+                # Assign default user role
+                default_role = db.query(Role).filter(Role.name == "user").first()
+                if default_role:
+                    db_user.roles = [default_role]
             
-            db.add(db_user)
             db.commit()
             db.refresh(db_user)
             
-            logger.info(f"User created: {db_user.username}")
+            logger.info(f"User created: {db_user.username} with {len(db_user.roles)} roles")
             return db_user
             
         except Exception as e:
             db.rollback()
             logger.error(f"Error creating user: {e}")
+            raise
+    
+    @staticmethod
+    def create_public_user(db: Session, user_data: UserCreate) -> User:
+        """Create a new user via public registration (always gets 'user' role)"""
+        try:
+            # Check if username already exists
+            existing_user = db.query(User).filter(User.username == user_data.username).first()
+            if existing_user:
+                raise ValueError(f"Username '{user_data.username}' already exists")
+            
+            # Check if email already exists  
+            existing_email = db.query(User).filter(User.email == user_data.email).first()
+            if existing_email:
+                raise ValueError(f"Email '{user_data.email}' already exists")
+            
+            # Hash password
+            hashed_password = get_password_hash(user_data.password)
+            
+            # Create user
+            db_user = User(
+                username=user_data.username,
+                email=user_data.email,
+                hashed_password=hashed_password,
+                is_active=True
+            )
+            
+            db.add(db_user)
+            db.flush()
+            
+            # Always assign default "user" role for public registration
+            default_role = db.query(Role).filter(Role.name == "user").first()
+            if default_role:
+                db_user.roles = [default_role]
+            else:
+                # If somehow the user role doesn't exist, create it
+                logger.warning("Default 'user' role not found, creating it")
+                default_role = Role(
+                    name="user",
+                    description="Basic user with read-only access",
+                    is_system_role=True
+                )
+                db.add(default_role)
+                db.flush()
+                db_user.roles = [default_role]
+            
+            db.commit()
+            db.refresh(db_user)
+            
+            logger.info(f"Public user created: {db_user.username} with 'user' role")
+            return db_user
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error creating public user: {e}")
             raise
     
     @staticmethod

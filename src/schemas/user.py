@@ -1,21 +1,46 @@
-from pydantic import BaseModel, EmailStr, validator
+from pydantic import BaseModel, EmailStr, Field, validator
 from typing import List, Optional
 from datetime import datetime
 
-class UserBase(BaseModel):
-    username: str
+class PublicUserCreate(BaseModel):
+    """Schema for public user registration (no role fields)"""
+    username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
+    password: str = Field(..., min_length=6)
+    
+    @validator('username')
+    def username_alphanumeric(cls, v):
+        assert v.isalnum(), 'Username must be alphanumeric'
+        return v.lower()
+    
+    @validator('password')
+    def password_strength(cls, v):
+        if len(v) < 6:
+            raise ValueError('Password must be at least 6 characters long')
+        return v
 
-class UserCreate(UserBase):
-    password: str
+class UserCreate(BaseModel):
+    """Schema for admin user creation (with optional role fields)"""
+    username: str = Field(..., min_length=3, max_length=50)
+    email: EmailStr
+    password: str = Field(..., min_length=6)
     role_ids: Optional[List[int]] = None
     role_names: Optional[List[str]] = None
     
+    @validator('username')
+    def username_alphanumeric(cls, v):
+        assert v.isalnum(), 'Username must be alphanumeric'
+        return v.lower()
+    
     @validator('password')
-    def validate_password(cls, v):
-        if len(v) < 8:
-            raise ValueError('Password must be at least 8 characters long')
+    def password_strength(cls, v):
+        if len(v) < 6:
+            raise ValueError('Password must be at least 6 characters long')
         return v
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
 
 class UserUpdate(BaseModel):
     username: Optional[str] = None
@@ -23,52 +48,18 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
     is_active: Optional[bool] = None
     role_ids: Optional[List[int]] = None
-    
-    @validator('password')
-    def validate_password(cls, v):
-        if v is not None and len(v) < 8:
-            raise ValueError('Password must be at least 8 characters long')
-        return v
 
-class UserLogin(BaseModel):
+class UserResponse(BaseModel):
+    id: int
     username: str
-    password: str
-
-class UserResponseSimple(UserBase):
-    """Simple user response without roles"""
-    id: int
+    email: str
     is_active: bool
     created_at: datetime
-    
+    updated_at: Optional[datetime] = None
+    roles: List['RoleResponse'] = []
+
     class Config:
         from_attributes = True
-
-# Define RoleSimple here to avoid circular imports
-class RoleSimpleInUser(BaseModel):
-    """Role schema for user responses"""
-    id: int
-    name: str
-    description: Optional[str] = None
-    is_system_role: bool
-    
-    class Config:
-        from_attributes = True
-
-class UserResponse(UserBase):
-    """Full user response with roles"""
-    id: int
-    is_active: bool
-    created_at: datetime
-    roles: List[RoleSimpleInUser] = []
-    
-    class Config:
-        from_attributes = True
-
-class UserInDB(UserBase):
-    id: int
-    hashed_password: str
-    is_active: bool
-    created_at: datetime
 
 class Token(BaseModel):
     access_token: str
@@ -76,22 +67,17 @@ class Token(BaseModel):
     token_type: str = "bearer"
     expires_in: int
 
-class TokenData(BaseModel):
-    username: Optional[str] = None
-
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 class PasswordChangeRequest(BaseModel):
     current_password: str
-    new_password: str
-    
-    @validator('new_password')
-    def validate_new_password(cls, v):
-        if len(v) < 8:
-            raise ValueError('New password must be at least 8 characters long')
-        return v
+    new_password: str = Field(..., min_length=6)
 
 class MessageResponse(BaseModel):
     message: str
     success: bool = True
+
+# Import for forward reference
+from src.schemas.role import RoleResponse
+UserResponse.model_rebuild()

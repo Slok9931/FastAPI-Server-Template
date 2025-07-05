@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 from src.schemas.user import (
-    UserCreate, UserLogin, UserResponse, Token, 
+    UserCreate, PublicUserCreate, UserLogin, UserResponse, Token, 
     RefreshTokenRequest, PasswordChangeRequest, MessageResponse
 )
 from src.models.user import User
@@ -59,7 +59,7 @@ async def register(
 
 @router.post("/public-register", response_model=UserResponse)
 async def public_register(
-    user_data: UserCreate,
+    user_data: PublicUserCreate,  # ✅ Use PublicUserCreate schema
     db: Session = Depends(get_db)
 ):
     """Public registration endpoint (No authentication required)"""
@@ -78,12 +78,17 @@ async def public_register(
                 detail="Email already registered"
             )
         
-        # For public registration, don't allow role assignment
-        user_data.role_ids = None
-        user_data.role_names = None
+        # Convert PublicUserCreate to UserCreate for service layer
+        user_create_data = UserCreate(
+            username=user_data.username,
+            email=user_data.email,
+            password=user_data.password,
+            role_ids=None,  # No roles for public registration
+            role_names=None
+        )
         
-        # Create user with default role
-        new_user = UserService.create_user(db, user_data)
+        # Create user with default user role
+        new_user = UserService.create_public_user(db, user_create_data)
         logger.info(f"New user self-registered: {new_user.username}")
         
         return UserResponse.from_orm(new_user)

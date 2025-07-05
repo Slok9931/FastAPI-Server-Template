@@ -156,25 +156,3 @@ async def get_current_user_profile(
 ):
     """Get current user's profile (No special permission required)"""
     return UserResponse.from_orm(current_user)
-
-@router.put("/me", response_model=UserResponse)
-async def update_current_user_profile(
-    user_update: UserUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Update current user's profile (No special permission required)"""
-    try:
-        # Users can only update their own basic info, not roles
-        if user_update.role_ids is not None:
-            raise HTTPException(status_code=403, detail="You cannot modify your own roles")
-        
-        updated_user = UserService.update_user(db, current_user.id, user_update)
-        if not updated_user:
-            raise HTTPException(status_code=404, detail="User profile not found")
-        return UserResponse.from_orm(updated_user)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating user profile: {e}")
-        raise HTTPException(status_code=500, detail="Unable to update your profile")
