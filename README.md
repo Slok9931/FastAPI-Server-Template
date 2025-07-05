@@ -316,13 +316,12 @@ The system creates these accounts during initialization:
 |------------|--------------|-----------------|-------------------------|
 | `GET` | `/api/v1/users/` | List users (paginated) | `user:read` |
 | `GET` | `/api/v1/users/{user_id}` | Get user details | `user:read` |
-| `GET` | `/api/v1/users/me` | Get current user profile | Authentication |
+| `GET` | `/api/v1/users/me` | Get current user profile | `Authentication` |
 | `POST` | `/api/v1/users/` | Create new user | `user:create` |
 | `PUT` | `/api/v1/users/{user_id}` | Update user | `user:update` |
 | `DELETE` | `/api/v1/users/{user_id}` | Delete user | `user:delete` |
 | `POST` | `/api/v1/users/{user_id}/roles/{role_id}` | Add role to user | `user:update` |
 | `DELETE` | `/api/v1/users/{user_id}/roles/{role_id}` | Remove role from user | `user:update` |
-| `PATCH` | `/api/v1/users/{user_id}/toggle-status` | Toggle user active status | `user:update` |
 
 ### **🛡️ Role Management Endpoints**
 | **Method** | **Endpoint** | **Description** | **Permission Required** |
@@ -330,12 +329,10 @@ The system creates these accounts during initialization:
 | `GET` | `/api/v1/roles/` | List all roles | `role:read` |
 | `GET` | `/api/v1/roles/{role_id}` | Get role details | `role:read` |
 | `POST` | `/api/v1/roles/` | Create role with permissions | `role:create` |
-| `POST` | `/api/v1/roles/create-minimal` | Create role with minimal permissions | `role:create` |
 | `PUT` | `/api/v1/roles/{role_id}` | Update role | `role:update` |
 | `DELETE` | `/api/v1/roles/{role_id}` | Delete role | `role:delete` |
 | `POST` | `/api/v1/roles/{role_id}/permissions/{permission_id}` | Add permission to role | `role:update` |
 | `DELETE` | `/api/v1/roles/{role_id}/permissions/{permission_id}` | Remove permission from role | `role:update` |
-| `PATCH` | `/api/v1/roles/{role_id}/toggle-status` | Toggle role active status | `role:update` |
 
 ### **🔑 Permission Management Endpoints**
 | **Method** | **Endpoint** | **Description** | **Permission Required** |
@@ -345,8 +342,7 @@ The system creates these accounts during initialization:
 | `POST` | `/api/v1/permissions/` | Create new permission | `permission:create` |
 | `PUT` | `/api/v1/permissions/{permission_id}` | Update permission | `permission:update` |
 | `DELETE` | `/api/v1/permissions/{permission_id}` | Delete permission | `permission:delete` |
-| `GET` | `/api/v1/permissions/by-resource/{resource}` | Get permissions by resource | `permission:read` |
-| `PATCH` | `/api/v1/permissions/{permission_id}/toggle-status` | Toggle permission status | `permission:update` |
+| `GET` | `/api/v1/permissions/by-category/{category}` | Get permissions by resource | `permission:read` |
 
 ### **📦 Module Management Endpoints**
 | **Method** | **Endpoint** | **Description** | **Permission Required** |
@@ -356,7 +352,6 @@ The system creates these accounts during initialization:
 | `POST` | `/api/v1/modules/` | Create new module | `module:create` |
 | `PUT` | `/api/v1/modules/{module_id}` | Update module | `module:update` |
 | `DELETE` | `/api/v1/modules/{module_id}` | Delete module | `module:delete` |
-| `PATCH` | `/api/v1/modules/{module_id}/toggle-status` | Toggle module status | `module:update` |
 | `GET` | `/api/v1/modules/{module_id}/routes` | Get routes for module | `module:read` |
 
 ### **🗺️ Route Management Endpoints**
@@ -364,15 +359,10 @@ The system creates these accounts during initialization:
 |------------|--------------|-----------------|-------------------------|
 | `GET` | `/api/v1/routes/` | List routes (with filtering) | `route:read` |
 | `GET` | `/api/v1/routes/{route_id}` | Get route details | `route:read` |
-| `GET` | `/api/v1/routes/sidebar` | Get sidebar menu routes | Authentication |
+| `GET` | `/api/v1/routes/sidebar` | Get sidebar menu routes | `Authentication` |
 | `POST` | `/api/v1/routes/` | Create new route | `route:create` |
 | `PUT` | `/api/v1/routes/{route_id}` | Update route | `route:update` |
 | `DELETE` | `/api/v1/routes/{route_id}` | Delete route | `route:delete` |
-| `PATCH` | `/api/v1/routes/{route_id}/toggle-status` | Toggle route status | `route:update` |
-| `PATCH` | `/api/v1/routes/{route_id}/toggle-sidebar` | Toggle sidebar visibility | `route:update` |
-| `GET` | `/api/v1/routes/module/{module_id}` | Get routes by module | `route:read` |
-| `GET` | `/api/v1/routes/parent/{parent_id}/children` | Get child routes | `route:read` |
-| `GET` | `/api/v1/routes/top-level` | Get top-level routes | `route:read` |
 
 ---
 
@@ -1085,7 +1075,7 @@ This template is built with amazing open-source technologies:
 - 📚 **Documentation**: Check this README and `/docs` endpoint
 - 🐛 **Issues**: Create an issue on GitHub
 - 💬 **Discussions**: Use GitHub Discussions for questions
-- 📧 **Email**: [your-email@domain.com](mailto:your-email@domain.com)
+- 📧 **Email**: [sloktulsyan@gmail.com](mailto:sloktulsyan@gmail.com)
 
 ### **🔍 Debugging Steps**
 1. ✅ Check application logs in `logs/security.log`
@@ -1099,8 +1089,3 @@ This template is built with amazing open-source technologies:
 **🎉 Built with ❤️ using FastAPI, PostgreSQL, Docker, and modern Python practices.**
 
 **⭐ If this template helped you, please consider giving it a star on GitHub!**
-
----
-
-*Last updated: December 2024*
-*Template version: 2.0.0*
