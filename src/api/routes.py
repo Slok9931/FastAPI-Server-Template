@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from src.config.database import get_db
 from src.schemas import (
-    RouteResponse, RouteCreate, RouteListResponse, 
-    SidebarResponse
+    RouteResponse, RouteCreate, RouteUpdate, RouteListResponse, 
+    SidebarResponse, MessageResponse
 )
 from src.models import User
 from src.service import RouteService
@@ -60,17 +60,37 @@ async def get_sidebar_routes(
         logger.error(f"Error getting sidebar routes: {e}")
         raise HTTPException(status_code=500, detail="Unable to retrieve sidebar routes")
 
+@router.get("/{route_id}", response_model=RouteResponse)
+async def get_route_by_id(
+    route_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(has_permission("route", "read"))
+):
+    """Get route by ID (Requires route:read permission)"""
+    try:
+        route = RouteService.get_route_by_id(db, route_id)
+        if not route:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Route with ID {route_id} not found"
+            )
+        return RouteResponse.from_orm(route)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting route by ID: {e}")
+        raise HTTPException(status_code=500, detail="Unable to retrieve route")
+
 @router.post("/", response_model=RouteResponse)
 async def create_route(
     route_data: RouteCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(has_permission("route", "create"))  # ✅ Fix permission
+    current_user: User = Depends(has_permission("route", "create"))
 ):
-    """Create new route (Requires user:create permission)"""
+    """Create new route (Requires route:create permission)"""
     try:
         logger.info(f"API: Creating route with data: {route_data.dict()}")
         
-        # ✅ Call service and check for None return
         new_route = RouteService.create_route(db, route_data)
         
         if new_route is None:
@@ -79,19 +99,16 @@ async def create_route(
         
         logger.info(f"API: Route created with ID: {new_route.id}")
         
-        # ✅ Verify all required fields are present
         if not hasattr(new_route, 'id') or new_route.id is None:
             logger.error("Created route missing ID")
             raise HTTPException(status_code=500, detail="Route creation failed - missing ID")
         
-        # ✅ Convert to response model safely
         try:
             response = RouteResponse.from_orm(new_route)
             logger.info(f"API: Successfully converted to response model")
             return response
         except Exception as conversion_error:
             logger.error(f"API: Error converting to response model: {conversion_error}")
-            # ✅ Return a manual response if from_orm fails
             return RouteResponse(
                 id=new_route.id,
                 route=new_route.route,
@@ -103,9 +120,9 @@ async def create_route(
                 parent_id=new_route.parent_id,
                 created_at=new_route.created_at,
                 updated_at=new_route.updated_at,
-                module=None,  # Simplified to avoid circular reference
-                parent=None,  # Simplified to avoid circular reference
-                children=[]   # Empty for new route
+                module=None,
+                parent=None,
+                children=[]
             )
         
     except ValueError as e:
@@ -123,31 +140,105 @@ async def create_route(
         logger.error(f"API: Unexpected error creating route: {e}")
         raise HTTPException(status_code=500, detail=f"Unable to create route: {str(e)}")
 
-# ✅ Add a simple test endpoint
-@router.post("/test", response_model=dict)
-async def create_route_test(
-    route_data: RouteCreate,
+@router.put("/{route_id}", response_model=RouteResponse)
+async def update_route(
+    route_id: int,
+    route_data: RouteUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(has_permission("route", "create"))
+    current_user: User = Depends(has_permission("route", "update"))
 ):
-    """Test route creation endpoint"""
+    """Update route (Requires route:update permission)"""
     try:
-        logger.info(f"TEST: Creating route with data: {route_data.dict()}")
+        logger.info(f"API: Updating route {route_id} with data: {route_data.dict(exclude_unset=True)}")
         
-        new_route = RouteService.create_route(db, route_data)
+        # Check if route exists
+        existing_route = RouteService.get_route_by_id(db, route_id)
+        if not existing_route:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Route with ID {route_id} not found"
+            )
         
-        if new_route is None:
-            return {"error": "Service returned None", "success": False}
+        # Update route
+        updated_route = RouteService.update_route(db, route_id, route_data)
         
-        return {
-            "success": True,
-            "route_id": new_route.id,
-            "route_path": new_route.route,
-            "label": new_route.label,
-            "module_id": new_route.module_id,
-            "created_at": str(new_route.created_at)
-        }
+        if not updated_route:
+            raise HTTPException(status_code=500, detail="Route update failed")
         
+        logger.info(f"API: Route {route_id} updated successfully")
+        
+        try:
+            response = RouteResponse.from_orm(updated_route)
+            return response
+        except Exception as conversion_error:
+            logger.error(f"API: Error converting updated route to response model: {conversion_error}")
+            return RouteResponse(
+                id=updated_route.id,
+                route=updated_route.route,
+                label=updated_route.label,
+                icon=updated_route.icon,
+                is_active=updated_route.is_active,
+                is_sidebar=updated_route.is_sidebar,
+                module_id=updated_route.module_id,
+                parent_id=updated_route.parent_id,
+                created_at=updated_route.created_at,
+                updated_at=updated_route.updated_at,
+                module=None,
+                parent=None,
+                children=[]
+            )
+        
+    except ValueError as e:
+        logger.error(f"API: Validation error updating route: {e}")
+        if "already exists" in str(e).lower():
+            raise HTTPException(status_code=400, detail="Route path already exists in this module")
+        elif "not found" in str(e).lower():
+            raise HTTPException(status_code=400, detail="Module or parent route not found")
+        elif "same module" in str(e).lower():
+            raise HTTPException(status_code=400, detail="Parent route must be in the same module")
+        elif "circular" in str(e).lower():
+            raise HTTPException(status_code=400, detail="Route cannot be its own parent")
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"TEST: Error: {e}")
-        return {"error": str(e), "success": False}
+        logger.error(f"API: Unexpected error updating route: {e}")
+        raise HTTPException(status_code=500, detail=f"Unable to update route: {str(e)}")
+
+@router.delete("/{route_id}", response_model=MessageResponse)
+async def delete_route(
+    route_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(has_permission("route", "delete"))
+):
+    """Delete route (Requires route:delete permission)"""
+    try:
+        logger.info(f"API: Deleting route {route_id}")
+        
+        # Check if route exists
+        existing_route = RouteService.get_route_by_id(db, route_id)
+        if not existing_route:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Route with ID {route_id} not found"
+            )
+        
+        # Delete route
+        success = RouteService.delete_route(db, route_id)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Route deletion failed")
+        
+        logger.info(f"API: Route {route_id} deleted successfully")
+        return MessageResponse(message=f"Route '{existing_route.route}' deleted successfully")
+        
+    except ValueError as e:
+        logger.error(f"API: Validation error deleting route: {e}")
+        if "children" in str(e).lower():
+            raise HTTPException(status_code=400, detail="Cannot delete route with child routes")
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"API: Unexpected error deleting route: {e}")
+        raise HTTPException(status_code=500, detail=f"Unable to delete route: {str(e)}")
