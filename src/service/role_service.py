@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
-from src.models.role import Role
-from src.models.permission import Permission
-from src.schemas.role import RoleCreate, RoleUpdate
+from src.models import Role, Permission
+from src.schemas import RoleCreate, RoleUpdate
 from typing import List, Optional
 import logging
 

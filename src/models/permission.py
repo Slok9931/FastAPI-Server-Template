@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Text
 from sqlalchemy.orm import relationship
 from src.config.database import Base
-from src.models.associations import role_permissions
+from src.models.role_permission import role_permissions
 
 class Permission(Base):
     __tablename__ = "permissions"

@@ -1,13 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from src.config.database import get_db
-from src.schemas.module import ModuleResponse, ModuleCreate, ModuleUpdate, ModuleListResponse
-from src.schemas.user import MessageResponse
-from src.service.module_service import ModuleService
-from src.models.user import User
-from src.core.permissions import get_current_user, has_permission
 from typing import List
 import logging
+from src.config.database import get_db
+from src.schemas import (
+    ModuleResponse, ModuleCreate, ModuleUpdate, 
+    ModuleListResponse, MessageResponse
+)
+from src.models import User
+from src.service import ModuleService
+from src.core import has_permission
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

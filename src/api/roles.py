@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from src.config.database import get_db
-from src.schemas.role import RoleResponse, RoleCreate, RoleUpdate
-from src.schemas.user import MessageResponse
-from src.service.role_service import RoleService
-from src.models.user import User
-from src.core.permissions import get_current_user, has_permission
+from src.schemas import RoleResponse, RoleCreate, RoleUpdate, MessageResponse
+from src.service import RoleService
+from src.models import User
+from src.core import has_permission
 from typing import List
 import logging
 

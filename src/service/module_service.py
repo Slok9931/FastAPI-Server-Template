@@ -1,8 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from src.models.module import Module
-from src.models.route import Route
-from src.schemas.module import ModuleCreate, ModuleUpdate, ModuleListResponse
+from src.models import Module, Route
+from src.schemas import ModuleCreate, ModuleUpdate, ModuleListResponse
 from typing import List, Optional
 import logging
 

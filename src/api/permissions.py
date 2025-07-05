@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from src.config.database import get_db
-from src.schemas.permission import PermissionResponse, PermissionCreate, PermissionUpdate
-from src.schemas.user import MessageResponse
-from src.service.permission_service import PermissionService
-from src.models.user import User
-from src.core.permissions import get_current_user, has_permission
+from src.schemas import PermissionResponse, PermissionCreate, PermissionUpdate, MessageResponse
+from src.service import PermissionService
+from src.models import User
+from src.core import get_current_user, has_permission
 from typing import List
 import logging
 

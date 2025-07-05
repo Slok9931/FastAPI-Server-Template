@@ -1,10 +1,9 @@
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
-from src.models.route import Route
-from src.models.module import Module
-from src.schemas.route import RouteCreate, RouteUpdate, RouteListResponse, SidebarResponse
 from typing import List, Optional
 import logging
+from src.models import Route, Module
+from src.schemas import RouteCreate, RouteUpdate, RouteListResponse, SidebarResponse
 
 logger = logging.getLogger(__name__)
 

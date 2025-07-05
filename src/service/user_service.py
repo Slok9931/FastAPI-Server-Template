@@ -1,9 +1,7 @@
 from sqlalchemy.orm import Session
-from src.models.user import User
-from src.models.role import Role
-from src.schemas.user import UserCreate, UserUpdate
-from src.core.security import get_password_hash
-from src.config.settings import settings
+from src.models import User, Role
+from src.schemas import UserCreate, UserUpdate
+from src.core import get_password_hash
 from typing import List, Optional
 import logging
 

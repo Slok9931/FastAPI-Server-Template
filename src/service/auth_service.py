@@ -1,15 +1,14 @@
 from sqlalchemy.orm import Session
-from src.models.user import User
-from src.core.security import (
+from src.models import User
+from src.core import (
     verify_password, 
     create_access_token, 
     create_refresh_token,
-    verify_token,
-    get_password_hash
+    verify_token
 )
 from src.service.user_service import UserService
-from src.schemas.user import UserCreate
-from src.config.settings import settings
+from src.schemas import UserCreate
+from src.config import settings
 from datetime import timedelta
 import logging
 

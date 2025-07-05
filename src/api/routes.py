@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from src.config.database import get_db
-from src.schemas.route import RouteResponse, RouteCreate, RouteUpdate, RouteListResponse, SidebarResponse
-from src.schemas.user import MessageResponse
-from src.service.route_service import RouteService
-from src.models.user import User
-from src.core.permissions import get_current_user, has_permission
+from src.schemas import (
+    RouteResponse, RouteCreate, RouteListResponse, 
+    SidebarResponse
+)
+from src.models import User
+from src.service import RouteService
+from src.core import get_current_user, has_permission
 from typing import List
 import logging
 
@@ -62,7 +64,7 @@ async def get_sidebar_routes(
 async def create_route(
     route_data: RouteCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(has_permission("user", "create"))  # ✅ Fix permission
+    current_user: User = Depends(has_permission("route", "create"))  # ✅ Fix permission
 ):
     """Create new route (Requires user:create permission)"""
     try:
@@ -126,7 +128,7 @@ async def create_route(
 async def create_route_test(
     route_data: RouteCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(has_permission("user", "create"))
+    current_user: User = Depends(has_permission("route", "create"))
 ):
     """Test route creation endpoint"""
     try:

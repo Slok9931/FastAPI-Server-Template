@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from src.models.permission import Permission
-from src.schemas.permission import PermissionCreate, PermissionUpdate
+from src.models import Permission
+from src.schemas import PermissionCreate, PermissionUpdate
 from typing import List, Optional
 import logging
 

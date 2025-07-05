@@ -1,12 +1,9 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
 from contextlib import asynccontextmanager
 import logging
 import time
-# Import models to register them with SQLAlchemy
-from src.models import User, Role, Permission, user_roles, role_permissions
 
 from src.api.auth import router as auth_router
 from src.api.users import router as users_router
@@ -14,7 +11,7 @@ from src.api.roles import router as roles_router
 from src.api.permissions import router as permissions_router
 from src.api.modules import router as modules_router
 from src.api.routes import router as routes_router
-from src.config.database import engine, get_db
+from src.config.database import engine
 from src.config.settings import settings
 from init_db import init_database
 from src.middleware.rate_limiting import rate_limit_middleware

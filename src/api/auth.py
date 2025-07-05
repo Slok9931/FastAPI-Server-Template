@@ -1,18 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
-from src.schemas.user import (
+from src.schemas import (
     UserCreate, PublicUserCreate, UserLogin, UserResponse, Token, 
     RefreshTokenRequest, PasswordChangeRequest, MessageResponse
 )
-from src.models.user import User
-from src.service.user_service import UserService
-from src.core.security import (
-    verify_password, create_access_token, create_refresh_token, verify_token
+from src.models import User
+from src.service import UserService
+from src.core import (
+    verify_password, create_access_token, create_refresh_token, verify_token, get_current_user, has_permission
 )
-from src.core.permissions import get_current_user, has_permission
 from src.config.database import get_db
-from src.config.settings import settings
+from src.config import settings
 from datetime import timedelta
 import logging
 
