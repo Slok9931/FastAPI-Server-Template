@@ -1,10 +1,10 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 from contextlib import asynccontextmanager
 import logging
 import time
-
 # Import models to register them with SQLAlchemy
 from src.models import User, Role, Permission, user_roles, role_permissions
 
@@ -12,11 +12,12 @@ from src.api.auth import router as auth_router
 from src.api.users import router as users_router
 from src.api.roles import router as roles_router
 from src.api.permissions import router as permissions_router
+from src.api.modules import router as modules_router
+from src.api.routes import router as routes_router
 from src.config.database import engine, get_db
 from src.config.settings import settings
 from init_db import init_database
 from src.middleware.rate_limiting import rate_limit_middleware
-from sqlalchemy.orm import Session
 
 # Configure logging
 logging.basicConfig(
@@ -118,6 +119,9 @@ app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(users_router, prefix="/api/v1/users", tags=["Users"])
 app.include_router(roles_router, prefix="/api/v1/roles", tags=["Roles"])
 app.include_router(permissions_router, prefix="/api/v1/permissions", tags=["Permissions"])
+app.include_router(modules_router, prefix="/api/v1/modules", tags=["Modules"])
+app.include_router(routes_router, prefix="/api/v1/routes", tags=["Routes"])
+
 
 # Health check endpoint
 @app.get("/health")
