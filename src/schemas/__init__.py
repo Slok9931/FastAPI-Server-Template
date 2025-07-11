@@ -20,6 +20,9 @@ from src.schemas.route import (
     RouteBase, RouteCreate, RouteUpdate, RouteResponse,
     RouteListResponse, SidebarResponse, RouteCreateResponse
 )
+from src.schemas.dynamic_model import (
+    DynamicDataCreate, DynamicDataResponse, DynamicDataUpdate, DynamicFieldBase, DynamicFieldCreate, DynamicFieldResponse, DynamicFieldUpdate, DynamicModelBase, DynamicModelCreate, DynamicModelListResponse, DynamicModelResponse, DynamicModelUpdate
+)
 
 # Export all schemas
 __all__ = [
@@ -42,5 +45,8 @@ __all__ = [
     
     # Route schemas
     "RouteBase", "RouteCreate", "RouteUpdate", "RouteResponse",
-    "RouteListResponse", "SidebarResponse", "RouteCreateResponse"
+    "RouteListResponse", "SidebarResponse", "RouteCreateResponse",
+
+    #dynamic_model schemas
+    "DynamicDataCreate", "DynamicDataResponse", "DynamicDataUpdate", "DynamicFieldBase", "DynamicFieldCreate", "DynamicFieldResponse", "DynamicFieldUpdate", "DynamicModelBase", "DynamicModelCreate", "DynamicModelListResponse", "DynamicModelResponse", "DynamicModelUpdate"
 ]

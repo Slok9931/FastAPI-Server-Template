@@ -11,6 +11,7 @@ from src.api.roles import router as roles_router
 from src.api.permissions import router as permissions_router
 from src.api.modules import router as modules_router
 from src.api.routes import router as routes_router
+from src.api.dynamic_models import router as dynamic_model_router
 from src.config.database import engine
 from src.config.settings import settings
 from init_db import init_database
@@ -118,6 +119,7 @@ app.include_router(roles_router, prefix="/api/v1/roles", tags=["Roles"])
 app.include_router(permissions_router, prefix="/api/v1/permissions", tags=["Permissions"])
 app.include_router(modules_router, prefix="/api/v1/modules", tags=["Modules"])
 app.include_router(routes_router, prefix="/api/v1/routes", tags=["Routes"])
+app.include_router(dynamic_model_router, prefix="/api/v1/dynamic_model", tags=["Dynamic_Model"])
 
 
 # Health check endpoint
