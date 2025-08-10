@@ -18,7 +18,7 @@ from src.schemas.module import (
 )
 from src.schemas.route import (
     RouteBase, RouteCreate, RouteUpdate, RouteResponse,
-    RouteListResponse, SidebarResponse, RouteCreateResponse
+    RouteListResponse, SidebarRouteResponse, SidebarModuleResponse, RouteCreateResponse
 )
 from src.schemas.dynamic_model import (
     DynamicDataCreate, DynamicDataResponse, DynamicDataUpdate, DynamicFieldBase, DynamicFieldCreate, DynamicFieldResponse, DynamicFieldUpdate, DynamicModelBase, DynamicModelCreate, DynamicModelListResponse, DynamicModelResponse, DynamicModelUpdate
@@ -45,7 +45,7 @@ __all__ = [
     
     # Route schemas
     "RouteBase", "RouteCreate", "RouteUpdate", "RouteResponse",
-    "RouteListResponse", "SidebarResponse", "RouteCreateResponse",
+    "RouteListResponse", "SidebarRouteResponse", "SidebarModuleResponse", "RouteCreateResponse",
 
     #dynamic_model schemas
     "DynamicDataCreate", "DynamicDataResponse", "DynamicDataUpdate", "DynamicFieldBase", "DynamicFieldCreate", "DynamicFieldResponse", "DynamicFieldUpdate", "DynamicModelBase", "DynamicModelCreate", "DynamicModelListResponse", "DynamicModelResponse", "DynamicModelUpdate"

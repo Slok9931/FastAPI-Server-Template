@@ -3,7 +3,7 @@ from sqlalchemy import func
 from typing import List, Optional
 import logging
 from src.models import Route, Module
-from src.schemas import RouteCreate, RouteUpdate, RouteListResponse, SidebarResponse
+from src.schemas import RouteCreate, RouteUpdate, RouteListResponse, SidebarRouteResponse, SidebarModuleResponse
 
 logger = logging.getLogger(__name__)
 
@@ -105,47 +105,54 @@ class RouteService:
             return []
     
     @staticmethod
-    def get_sidebar_routes(db: Session) -> List[SidebarResponse]:
-        """Get routes for sidebar menu (active, sidebar enabled, no parent)"""
+    def get_sidebar_routes(db: Session) -> List[SidebarModuleResponse]:
+        """Get sidebar modules with their routes in tree structure"""
         try:
-            # Get parent routes (no parent_id, is_sidebar=True, is_active=True)
-            parent_routes = db.query(Route).options(
-                joinedload(Route.module),
-                joinedload(Route.children)
-            ).filter(
-                Route.parent_id.is_(None),
-                Route.is_sidebar == True,
-                Route.is_active == True
-            ).join(Module).filter(
-                Module.is_active == True
-            ).order_by(Module.name, Route.label).all()
-            
-            sidebar_items = []
-            for route in parent_routes:
-                # Get active children
-                active_children = [
-                    SidebarResponse(
-                        id=child.id,
-                        route=child.route,
-                        label=child.label,
-                        icon=child.icon,
-                        module_name=route.module.name,
-                        children=[]
+            # Get all active modules
+            modules = db.query(Module).filter(Module.is_active == True).order_by(Module.name).all()
+            result = []
+
+            for module in modules:
+                # Get parent routes for this module (no parent_id, is_sidebar, is_active)
+                parent_routes = db.query(Route).options(
+                    joinedload(Route.children)
+                ).filter(
+                    Route.module_id == module.id,
+                    Route.parent_id.is_(None),
+                    Route.is_sidebar == True,
+                    Route.is_active == True
+                ).order_by(Route.label).all()
+
+                def build_route_tree(route):
+                    # Recursively build children
+                    children = [
+                        build_route_tree(child)
+                        for child in route.children
+                        if child.is_active and child.is_sidebar
+                    ]
+                    return SidebarRouteResponse(
+                        id=route.id,
+                        route=route.route,
+                        label=route.label,
+                        icon=route.icon,
+                        module_name=module.name,
+                        children=children
                     )
-                    for child in route.children 
-                    if child.is_active and child.is_sidebar
-                ]
-                
-                sidebar_items.append(SidebarResponse(
-                    id=route.id,
-                    route=route.route,
-                    label=route.label,
-                    icon=route.icon,
-                    module_name=route.module.name,
-                    children=active_children
+
+                routes_tree = [build_route_tree(route) for route in parent_routes]
+
+                result.append(SidebarModuleResponse(
+                    id=module.id,
+                    name=module.name,
+                    label=module.label,
+                    icon=module.icon,
+                    route=module.route,
+                    is_active=module.is_active,
+                    routes=routes_tree
                 ))
-            
-            return sidebar_items
+
+            return result
+
         except Exception as e:
             logger.error(f"Error getting sidebar routes: {e}")
             return []

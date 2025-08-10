@@ -116,17 +116,30 @@ class RouteListResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class SidebarResponse(BaseModel):
-    """Schema for sidebar menu structure"""
+class SidebarRouteResponse(BaseModel):
     id: int
     route: str
     label: str
-    icon: Optional[str]
+    icon: str
     module_name: str
-    children: List['SidebarResponse'] = []
+    children: List['SidebarRouteResponse'] = []
 
     class Config:
-        from_attributes = True
+        orm_mode = True
+
+SidebarRouteResponse.update_forward_refs()
+
+class SidebarModuleResponse(BaseModel):
+    id: int
+    name: str
+    label: str
+    icon: str
+    route: str
+    is_active: bool
+    routes: List[SidebarRouteResponse] = []
+
+    class Config:
+        orm_mode = True
 
 class RouteCreateResponse(BaseModel):
     """Simple response for route creation"""
@@ -146,4 +159,4 @@ class RouteCreateResponse(BaseModel):
 # Import for forward reference
 from src.schemas.module import ModuleResponse
 RouteResponse.model_rebuild()
-SidebarResponse.model_rebuild()
+SidebarModuleResponse.model_rebuild()

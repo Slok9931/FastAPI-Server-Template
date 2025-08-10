@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from src.config.database import get_db
 from src.schemas import (
     RouteResponse, RouteCreate, RouteUpdate, RouteListResponse, 
-    SidebarResponse, MessageResponse
+    SidebarModuleResponse, MessageResponse
 )
 from src.models import User
 from src.service import RouteService
@@ -47,7 +47,7 @@ async def get_routes(
         logger.error(f"Error getting routes: {e}")
         raise HTTPException(status_code=500, detail="Unable to retrieve routes at this time")
 
-@router.get("/sidebar", response_model=List[SidebarResponse])
+@router.get("/sidebar", response_model=List[SidebarModuleResponse])
 async def get_sidebar_routes(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
