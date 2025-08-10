@@ -120,8 +120,6 @@ async def create_route(
                 parent_id=new_route.parent_id,
                 created_at=new_route.created_at,
                 updated_at=new_route.updated_at,
-                module=None,
-                parent=None,
                 children=[]
             )
         
@@ -183,8 +181,6 @@ async def update_route(
                 parent_id=updated_route.parent_id,
                 created_at=updated_route.created_at,
                 updated_at=updated_route.updated_at,
-                module=None,
-                parent=None,
                 children=[]
             )
         

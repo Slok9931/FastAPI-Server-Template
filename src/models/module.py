@@ -11,6 +11,7 @@ class Module(Base):
     label = Column(String(100), nullable=False)
     icon = Column(String(50), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    route = Column(String(255), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     

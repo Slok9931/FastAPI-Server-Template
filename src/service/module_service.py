@@ -27,6 +27,7 @@ class ModuleService:
                 Module.name,
                 Module.label,
                 Module.icon,
+                Module.route,
                 Module.is_active,
                 Module.created_at,
                 func.count(Route.id).label('route_count')
@@ -40,6 +41,7 @@ class ModuleService:
                     name=module.name,
                     label=module.label,
                     icon=module.icon,
+                    route=module.route,
                     is_active=module.is_active,
                     created_at=module.created_at,
                     route_count=module.route_count or 0
@@ -91,6 +93,7 @@ class ModuleService:
                 name=module_data.name,
                 label=module_data.label,
                 icon=module_data.icon,
+                route=module_data.route,
                 is_active=module_data.is_active
             )
             
