@@ -11,16 +11,16 @@ class ModuleService:
     
     @staticmethod
     def get_all_modules(db: Session, skip: int = 0, limit: int = 100) -> List[Module]:
-        """Get all modules with pagination"""
+        """Get all modules with pagination, sorted by priority"""
         try:
-            return db.query(Module).offset(skip).limit(limit).all()
+            return db.query(Module).order_by(Module.priority).offset(skip).limit(limit).all()
         except Exception as e:
             logger.error(f"Error getting modules: {e}")
             return []
     
     @staticmethod
     def get_all_modules_with_count(db: Session, skip: int = 0, limit: int = 100) -> List[ModuleListResponse]:
-        """Get all modules with route count"""
+        """Get all modules with route count, sorted by priority"""
         try:
             modules_query = db.query(
                 Module.id,
@@ -29,9 +29,10 @@ class ModuleService:
                 Module.icon,
                 Module.route,
                 Module.is_active,
+                Module.priority,
                 Module.created_at,
                 func.count(Route.id).label('route_count')
-            ).outerjoin(Route).group_by(Module.id).offset(skip).limit(limit)
+            ).outerjoin(Route).group_by(Module.id).order_by(Module.priority).offset(skip).limit(limit)
             
             modules = modules_query.all()
             
@@ -42,6 +43,7 @@ class ModuleService:
                     label=module.label,
                     icon=module.icon,
                     route=module.route,
+                    priority=module.priority,
                     is_active=module.is_active,
                     created_at=module.created_at,
                     route_count=module.route_count or 0
@@ -94,6 +96,7 @@ class ModuleService:
                 label=module_data.label,
                 icon=module_data.icon,
                 route=module_data.route,
+                priority=module_data.priority,
                 is_active=module_data.is_active
             )
             

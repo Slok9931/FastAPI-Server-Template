@@ -7,6 +7,7 @@ class Module(Base):
     __tablename__ = "modules"
     
     id = Column(Integer, primary_key=True, index=True)
+    priority = Column(Integer, nullable=False, default=0)
     name = Column(String(100), unique=True, nullable=False, index=True)
     label = Column(String(100), nullable=False)
     icon = Column(String(50), nullable=True)

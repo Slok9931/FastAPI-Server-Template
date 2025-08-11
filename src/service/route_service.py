@@ -8,23 +8,22 @@ from src.schemas import RouteCreate, RouteUpdate, RouteListResponse, SidebarRout
 logger = logging.getLogger(__name__)
 
 class RouteService:
-    
     @staticmethod
     def get_all_routes(db: Session, skip: int = 0, limit: int = 100) -> List[Route]:
-        """Get all routes with pagination"""
+        """Get all routes with pagination, sorted by priority"""
         try:
             return db.query(Route).options(
                 joinedload(Route.module),
                 joinedload(Route.parent),
                 joinedload(Route.children)
-            ).offset(skip).limit(limit).all()
+            ).order_by(Route.priority).offset(skip).limit(limit).all()
         except Exception as e:
             logger.error(f"Error getting routes: {e}")
             return []
-    
+
     @staticmethod
     def get_all_routes_with_details(db: Session, skip: int = 0, limit: int = 100) -> List[RouteListResponse]:
-        """Get all routes with module and parent details"""
+        """Get all routes with module and parent details, sorted by priority"""
         try:
             routes_query = db.query(
                 Route.id,
@@ -35,12 +34,13 @@ class RouteService:
                 Route.is_sidebar,
                 Route.module_id,
                 Route.parent_id,
+                Route.priority,
                 Route.created_at,
                 Module.name.label('module_name'),
                 func.count(Route.children).label('children_count')
             ).join(Module).outerjoin(Route.children).group_by(
                 Route.id, Module.name
-            ).offset(skip).limit(limit)
+            ).order_by(Route.priority).offset(skip).limit(limit)
             
             routes = routes_query.all()
             
@@ -61,6 +61,7 @@ class RouteService:
                     is_sidebar=route.is_sidebar,
                     module_id=route.module_id,
                     parent_id=route.parent_id,
+                    priority=route.priority,
                     created_at=route.created_at,
                     module_name=route.module_name,
                     parent_route=parent_route,
@@ -87,33 +88,30 @@ class RouteService:
     
     @staticmethod
     def get_routes_by_module(db: Session, module_id: Optional[int] = None) -> List[Route]:
-        """Get all routes for a specific module, or all routes if module_id is None"""
+        """Get all routes for a specific module, or all routes if module_id is None, sorted by priority"""
         try:
             query = db.query(Route).options(
                 joinedload(Route.module),
                 joinedload(Route.parent),
                 joinedload(Route.children)
             )
-            
-            # ✅ Filter by module_id only if provided
             if module_id is not None:
                 query = query.filter(Route.module_id == module_id)
-            
-            return query.order_by(Route.label).all()
+            return query.order_by(Route.priority).all()
         except Exception as e:
             logger.error(f"Error getting routes by module: {e}")
             return []
-    
+
     @staticmethod
     def get_sidebar_routes(db: Session) -> List[SidebarModuleResponse]:
-        """Get sidebar modules with their routes in tree structure"""
+        """Get sidebar modules with their routes in tree structure, all sorted by priority"""
         try:
-            # Get all active modules
-            modules = db.query(Module).filter(Module.is_active == True).order_by(Module.name).all()
+            # Get all active modules sorted by priority
+            modules = db.query(Module).filter(Module.is_active == True).order_by(Module.priority).all()
             result = []
 
             for module in modules:
-                # Get parent routes for this module (no parent_id, is_sidebar, is_active)
+                # Get parent routes for this module (no parent_id, is_sidebar, is_active), sorted by priority
                 parent_routes = db.query(Route).options(
                     joinedload(Route.children)
                 ).filter(
@@ -121,21 +119,25 @@ class RouteService:
                     Route.parent_id.is_(None),
                     Route.is_sidebar == True,
                     Route.is_active == True
-                ).order_by(Route.label).all()
+                ).order_by(Route.priority).all()
 
                 def build_route_tree(route):
-                    # Recursively build children
-                    children = [
-                        build_route_tree(child)
-                        for child in route.children
-                        if child.is_active and child.is_sidebar
-                    ]
+                    # Recursively build children sorted by priority
+                    children = sorted(
+                        [
+                            build_route_tree(child)
+                            for child in route.children
+                            if child.is_active and child.is_sidebar
+                        ],
+                        key=lambda r: r.priority if hasattr(r, 'priority') else 0
+                    )
                     return SidebarRouteResponse(
                         id=route.id,
                         route=route.route,
                         label=route.label,
                         icon=route.icon,
                         module_name=module.name,
+                        priority=route.priority,
                         children=children
                     )
 
@@ -148,6 +150,7 @@ class RouteService:
                     icon=module.icon,
                     route=module.route,
                     is_active=module.is_active,
+                    priority=module.priority,
                     routes=routes_tree
                 ))
 
@@ -202,7 +205,8 @@ class RouteService:
                 is_active=route_data.is_active,
                 is_sidebar=route_data.is_sidebar,
                 module_id=route_data.module_id,
-                parent_id=route_data.parent_id
+                parent_id=route_data.parent_id,
+                priority=route_data.priority
             )
             
             logger.info(f"Route object created: {db_route}")

@@ -35,6 +35,8 @@ async def get_routes(
                 is_sidebar=route.is_sidebar,
                 module_id=route.module_id,
                 parent_id=route.parent_id,
+                priority=route.priority,
+                updated_at=route.updated_at,
                 created_at=route.created_at,
                 module_name=route.module.name,
                 parent_route=route.parent.route if route.parent else None,
@@ -118,6 +120,7 @@ async def create_route(
                 is_sidebar=new_route.is_sidebar,
                 module_id=new_route.module_id,
                 parent_id=new_route.parent_id,
+                priority=new_route.priority,
                 created_at=new_route.created_at,
                 updated_at=new_route.updated_at,
                 children=[]
@@ -179,6 +182,7 @@ async def update_route(
                 is_sidebar=updated_route.is_sidebar,
                 module_id=updated_route.module_id,
                 parent_id=updated_route.parent_id,
+                priority=updated_route.priority,
                 created_at=updated_route.created_at,
                 updated_at=updated_route.updated_at,
                 children=[]

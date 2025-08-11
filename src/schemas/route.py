@@ -10,6 +10,7 @@ class RouteBase(BaseModel):
     is_sidebar: bool = True
     module_id: int = Field(..., gt=0)
     parent_id: Optional[int] = Field(None)
+    priority: int = Field(0)
 
     @validator('parent_id')
     def validate_parent_id(cls, v):
@@ -52,7 +53,8 @@ class RouteUpdate(BaseModel):
     is_sidebar: Optional[bool] = None
     module_id: Optional[int] = Field(None, gt=0)
     parent_id: Optional[int] = Field(None)
-    
+    priority: Optional[int] = Field(None, ge=0)
+
     @validator('parent_id')
     def validate_parent_id(cls, v):
         """Validate parent_id - allow None or positive integers"""
@@ -112,6 +114,7 @@ class RouteListResponse(BaseModel):
     module_name: Optional[str]
     parent_route: Optional[str]
     children_count: int = 0
+    priority: int = 0
 
     class Config:
         from_attributes = True
@@ -135,6 +138,7 @@ class SidebarModuleResponse(BaseModel):
     label: str
     icon: str
     route: str
+    priority: int
     is_active: bool
     routes: List[SidebarRouteResponse] = []
 
@@ -151,6 +155,7 @@ class RouteCreateResponse(BaseModel):
     is_sidebar: bool
     module_id: int
     parent_id: Optional[int]
+    priority: int
     created_at: datetime
     
     class Config:

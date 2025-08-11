@@ -7,6 +7,7 @@ class Route(Base):
     __tablename__ = "routes"
     
     id = Column(Integer, primary_key=True, index=True)
+    priority = Column(Integer, nullable=False, default=0)
     route = Column(String(255), nullable=False)
     label = Column(String(100), nullable=False)
     icon = Column(String(50), nullable=True)

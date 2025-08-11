@@ -7,6 +7,7 @@ class ModuleBase(BaseModel):
     label: str = Field(..., min_length=1, max_length=100)
     icon: Optional[str] = Field(None, max_length=50)
     route: str = Field(..., min_length=1, max_length=255)
+    priority: int = Field(0)
     is_active: bool = True
 
 class ModuleCreate(ModuleBase):
@@ -21,6 +22,7 @@ class ModuleUpdate(BaseModel):
     label: Optional[str] = Field(None, min_length=1, max_length=100)
     icon: Optional[str] = Field(None, max_length=50)
     route: str = Field(..., min_length=1, max_length=255)
+    priority: Optional[int] = Field(None, ge=0)
     is_active: Optional[bool] = None
     
     @validator('name')
@@ -44,6 +46,7 @@ class ModuleListResponse(BaseModel):
     label: str
     icon: Optional[str]
     route: str
+    priority: int
     is_active: bool
     created_at: datetime
     route_count: int = 0

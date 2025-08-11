@@ -33,6 +33,8 @@ async def get_modules(
                 name=module.name,
                 label=module.label,
                 icon=module.icon,
+                route=module.route,
+                priority=module.priority,
                 is_active=module.is_active,
                 created_at=module.created_at,
                 route_count=0
