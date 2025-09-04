@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from src.models import User, Role
 from src.schemas import UserCreate, UserUpdate
 from src.core import get_password_hash
@@ -37,10 +38,30 @@ class UserService:
             return None
     
     @staticmethod
-    def get_all_users(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
-        """Get all users with pagination"""
+    def get_all_users(
+        db: Session, 
+        skip: int = 0, 
+        limit: int = 100, 
+        is_active: Optional[bool] = None, 
+        role: Optional[str] = None,
+        search: Optional[str] = None  # <-- Add this
+    ) -> List[User]:
+        """Get all users with optional filters and pagination"""
         try:
-            return db.query(User).offset(skip).limit(limit).all()
+            query = db.query(User)
+            if is_active is not None:
+                query = query.filter(User.is_active == is_active)
+            if role:
+                query = query.join(User.roles).filter(Role.name == role)
+            if search:
+                search_term = f"%{search}%"
+                query = query.filter(
+                    or_(
+                        User.username.ilike(search_term),
+                        User.email.ilike(search_term)
+                    )
+                )
+            return query.offset(skip).limit(limit).all()
         except Exception as e:
             logger.error(f"Error getting users: {e}")
             return []
@@ -251,3 +272,43 @@ class UserService:
             db.rollback()
             logger.error(f"Error removing role from user: {e}")
             return False
+    
+    @staticmethod
+    def bulk_delete_users(db: Session, user_ids: list[int]) -> int:
+        """Bulk delete users by IDs. Returns number of deleted users."""
+        if not user_ids:
+            logger.warning("No user IDs provided for bulk delete")
+            return 0
+        
+        try:
+            logger.info(f"Starting bulk delete for user IDs: {user_ids}")
+            deleted_count = 0
+            
+            for user_id in user_ids:
+                try:
+                    # Get the user
+                    user = db.query(User).filter(User.id == user_id).first()
+                    if user:
+                        # Clear roles first (this handles the relationship)
+                        user.roles.clear()
+                        db.flush()
+                        
+                        # Delete the user
+                        db.delete(user)
+                        deleted_count += 1
+                        logger.info(f"Deleted user ID: {user_id}")
+                    else:
+                        logger.warning(f"User ID {user_id} not found")
+                        
+                except Exception as e:
+                    logger.error(f"Error deleting user ID {user_id}: {e}")
+                    continue
+            
+            db.commit()
+            logger.info(f"Bulk delete completed successfully: {deleted_count} users deleted")
+            return deleted_count
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error bulk deleting users: {e}")
+            return 0

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
+from pydantic import BaseModel
 import logging
 from src.config.database import get_db
 from src.schemas import (
@@ -14,16 +15,29 @@ from src.core import get_current_user, has_permission
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+class BulkDeleteRequest(BaseModel):
+    user_ids: list[int]
+
 @router.get("/", response_model=List[UserResponse])
 async def get_users(
     skip: int = 0,
     limit: int = 100,
+    is_active: bool = None,
+    role: str = None,
+    search: str = None,  # <-- Add this line
     db: Session = Depends(get_db),
     current_user: User = Depends(has_permission("user", "read"))
 ):
-    """Get all users (Requires user:read permission)"""
+    """Get all users (Requires user:read permission) with optional filters"""
     try:
-        users = UserService.get_all_users(db, skip=skip, limit=limit)
+        users = UserService.get_all_users(
+            db, 
+            skip=skip, 
+            limit=limit, 
+            is_active=is_active, 
+            role=role,
+            search=search  # <-- Pass to service
+        )
         return [UserResponse.from_orm(user) for user in users]
     except Exception as e:
         logger.error(f"Error getting users: {e}")
@@ -159,3 +173,52 @@ async def get_current_user_profile(
 ):
     """Get current user's profile (No special permission required)"""
     return UserResponse.from_orm(current_user)
+
+@router.post("/bulk-delete", response_model=MessageResponse)
+async def bulk_delete_users(
+    request: BulkDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(has_permission("user", "delete"))
+):
+    """Bulk delete users (Requires user:delete permission)"""
+    try:
+        logger.info(f"Bulk delete request: {request.user_ids}")
+        logger.info(f"Current user ID: {current_user.id}")
+        
+        # Filter out current user ID to prevent self-deletion
+        safe_ids = [uid for uid in request.user_ids if uid != current_user.id]
+        logger.info(f"Safe IDs to delete: {safe_ids}")
+        
+        if not safe_ids:
+            if not request.user_ids:
+                raise HTTPException(status_code=400, detail="No user IDs provided")
+            elif len(request.user_ids) == 1 and request.user_ids[0] == current_user.id:
+                raise HTTPException(status_code=400, detail="Cannot delete your own account")
+            else:
+                raise HTTPException(status_code=400, detail="No valid users to delete")
+        
+        # Check if users exist before attempting to delete
+        existing_users = db.query(User).filter(User.id.in_(safe_ids)).all()
+        existing_ids = [user.id for user in existing_users]
+        logger.info(f"Existing user IDs found: {existing_ids}")
+        
+        if not existing_ids:
+            raise HTTPException(status_code=404, detail="No users found with the provided IDs")
+        
+        # Perform bulk delete
+        deleted_count = UserService.bulk_delete_users(db, existing_ids)
+        logger.info(f"Deleted count: {deleted_count}")
+        
+        if deleted_count == 0:
+            raise HTTPException(status_code=500, detail="Failed to delete users")
+        
+        return MessageResponse(
+            message=f"{deleted_count} user(s) deleted successfully",
+            success=True
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error bulk deleting users: {e}")
+        raise HTTPException(status_code=500, detail="Unable to bulk delete users")
