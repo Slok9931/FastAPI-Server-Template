@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, distinct
 from src.models import Permission
 from src.schemas import PermissionCreate, PermissionUpdate
 from typing import List, Optional
@@ -9,12 +10,69 @@ logger = logging.getLogger(__name__)
 class PermissionService:
     
     @staticmethod
-    def get_all_permissions(db: Session) -> List[Permission]:
-        """Get all permissions"""
+    def get_all_permissions(
+        db: Session, 
+        skip: int = 0, 
+        limit: int = 100, 
+        search: Optional[str] = None, 
+        category: Optional[str] = None
+    ) -> List[Permission]:
+        """Get all permissions with optional filters and pagination"""
         try:
-            return db.query(Permission).all()
+            query = db.query(Permission)
+            
+            if search:
+                search_term = f"%{search}%"
+                query = query.filter(
+                    or_(
+                        Permission.name.ilike(search_term),
+                        Permission.description.ilike(search_term)
+                    )
+                )
+            
+            if category:
+                query = query.filter(Permission.category == category)
+            
+            return query.offset(skip).limit(limit).all()
         except Exception as e:
             logger.error(f"Error getting permissions: {e}")
+            return []
+    
+    @staticmethod
+    def get_permission_count(
+        db: Session, 
+        search: Optional[str] = None, 
+        category: Optional[str] = None
+    ) -> int:
+        """Get total count of permissions with optional filters"""
+        try:
+            query = db.query(Permission)
+            
+            if search:
+                search_term = f"%{search}%"
+                query = query.filter(
+                    or_(
+                        Permission.name.ilike(search_term),
+                        Permission.description.ilike(search_term)
+                    )
+                )
+            
+            if category:
+                query = query.filter(Permission.category == category)
+            
+            return query.count()
+        except Exception as e:
+            logger.error(f"Error getting permission count: {e}")
+            return 0
+    
+    @staticmethod
+    def get_unique_categories(db: Session) -> List[str]:
+        """Get all unique permission categories"""
+        try:
+            categories = db.query(distinct(Permission.category)).all()
+            return [category[0] for category in categories if category[0]]
+        except Exception as e:
+            logger.error(f"Error getting unique categories: {e}")
             return []
     
     @staticmethod
@@ -130,3 +188,40 @@ class PermissionService:
             db.rollback()
             logger.error(f"Error deleting permission: {e}")
             raise
+
+    @staticmethod
+    def bulk_delete_permissions(db: Session, permission_ids: list[int]) -> int:
+        """Bulk delete permissions by IDs. Returns number of deleted permissions."""
+        if not permission_ids:
+            logger.warning("No permission IDs provided for bulk delete")
+            return 0
+
+        try:
+            logger.info(f"Starting bulk delete for permission IDs: {permission_ids}")
+            deleted_count = 0
+
+            for permission_id in permission_ids:
+                try:
+                    permission = db.query(Permission).filter(Permission.id == permission_id).first()
+                    if permission:
+                        # Clear roles first (if Permission.roles is a relationship)
+                        if hasattr(permission, "roles") and permission.roles:
+                            permission.roles.clear()
+                            db.flush()
+                        db.delete(permission)
+                        deleted_count += 1
+                        logger.info(f"Deleted permission ID: {permission_id}")
+                    else:
+                        logger.warning(f"Permission ID {permission_id} not found")
+                except Exception as e:
+                    logger.error(f"Error deleting permission ID {permission_id}: {e}")
+                    continue
+
+            db.commit()
+            logger.info(f"Bulk delete completed successfully: {deleted_count} permissions deleted")
+            return deleted_count
+
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error bulk deleting permissions: {e}")
+            return 0

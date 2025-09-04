@@ -3,26 +3,68 @@ from sqlalchemy.orm import Session
 from src.config.database import get_db
 from src.schemas import PermissionResponse, PermissionCreate, PermissionUpdate, MessageResponse
 from src.service import PermissionService
-from src.models import User
+from src.models import User, Permission
 from src.core import get_current_user, has_permission
 from typing import List
+from pydantic import BaseModel
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+class BulkDeleteRequest(BaseModel):
+    permission_ids: list[int]
+
 @router.get("/", response_model=List[PermissionResponse])
 async def get_permissions(
+    skip: int = 0,
+    limit: int = 100,
+    search: str = None,
+    category: str = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(has_permission("permission", "read"))
 ):
-    """Get all permissions (Requires permission:read permission)"""
+    """Get all permissions with optional filters (Requires permission:read permission)"""
     try:
-        permissions = PermissionService.get_all_permissions(db)
+        permissions = PermissionService.get_all_permissions(
+            db, 
+            skip=skip, 
+            limit=limit, 
+            search=search, 
+            category=category
+        )
         return [PermissionResponse.from_orm(permission) for permission in permissions]
     except Exception as e:
         logger.error(f"Error getting permissions: {e}")
         raise HTTPException(status_code=500, detail="Unable to retrieve permissions at this time")
+
+@router.get("/categories", response_model=List[str])
+async def get_permission_categories(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(has_permission("permission", "read"))
+):
+    """Get all unique permission categories (Requires permission:read permission)"""
+    try:
+        categories = PermissionService.get_unique_categories(db)
+        return sorted(categories)
+    except Exception as e:
+        logger.error(f"Error getting permission categories: {e}")
+        raise HTTPException(status_code=500, detail="Unable to retrieve permission categories")
+
+@router.get("/count", response_model=int)
+async def get_permissions_count(
+    search: str = None,
+    category: str = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(has_permission("permission", "read"))
+):
+    """Get total count of permissions with optional filters (Requires permission:read permission)"""
+    try:
+        count = PermissionService.get_permission_count(db, search=search, category=category)
+        return count
+    except Exception as e:
+        logger.error(f"Error getting permissions count: {e}")
+        raise HTTPException(status_code=500, detail="Unable to retrieve permissions count")
 
 @router.post("/", response_model=PermissionResponse)
 async def create_permission(
@@ -60,7 +102,7 @@ async def get_permission(
         logger.error(f"Error getting permission: {e}")
         raise HTTPException(status_code=500, detail="Unable to retrieve permission information")
 
-@router.put("/{permission_id}", response_model=PermissionResponse)
+@router.put("/get-one/{permission_id}", response_model=PermissionResponse)
 async def update_permission(
     permission_id: int,
     permission_update: PermissionUpdate,
@@ -76,6 +118,8 @@ async def update_permission(
     except ValueError as e:
         if "cannot be modified" in str(e).lower():
             raise HTTPException(status_code=400, detail="System permissions cannot be modified")
+        if "already exists" in str(e).lower():
+            raise HTTPException(status_code=400, detail="Permission name already exists")
         raise HTTPException(status_code=400, detail="Invalid permission information provided")
     except HTTPException:
         raise
@@ -109,6 +153,45 @@ async def delete_permission(
     except Exception as e:
         logger.error(f"Error deleting permission: {e}")
         raise HTTPException(status_code=500, detail="Unable to delete permission")
+
+@router.post("/bulk-delete", response_model=MessageResponse)
+async def bulk_delete_permissions(
+    request: BulkDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(has_permission("permission", "delete"))
+):
+    """Bulk delete permissions (Requires permission:delete permission)"""
+    try:
+        logger.info(f"Bulk delete request: {request.permission_ids}")
+
+        if not request.permission_ids:
+            raise HTTPException(status_code=400, detail="No permission IDs provided")
+
+        # Check if permissions exist before attempting to delete
+        existing_permissions = db.query(Permission).filter(Permission.id.in_(request.permission_ids)).all()
+        existing_ids = [permission.id for permission in existing_permissions]
+        logger.info(f"Existing permission IDs found: {existing_ids}")
+
+        if not existing_ids:
+            raise HTTPException(status_code=404, detail="No permissions found with the provided IDs")
+
+        # Perform bulk delete
+        deleted_count = PermissionService.bulk_delete_permissions(db, existing_ids)
+        logger.info(f"Deleted count: {deleted_count}")
+
+        if deleted_count == 0:
+            raise HTTPException(status_code=500, detail="Failed to delete permissions")
+
+        return MessageResponse(
+            message=f"{deleted_count} permission(s) deleted successfully",
+            success=True
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error bulk deleting permissions: {e}")
+        raise HTTPException(status_code=500, detail="Unable to bulk delete permissions")
 
 @router.get("/category/{category}", response_model=List[PermissionResponse])
 async def get_permissions_by_category(
