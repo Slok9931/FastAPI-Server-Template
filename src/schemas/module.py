@@ -21,7 +21,7 @@ class ModuleUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     label: Optional[str] = Field(None, min_length=1, max_length=100)
     icon: Optional[str] = Field(None, max_length=50)
-    route: str = Field(..., min_length=1, max_length=255)
+    route: Optional[str] = Field(None, min_length=1, max_length=255)
     priority: Optional[int] = Field(None, ge=0)
     is_active: Optional[bool] = None
     
