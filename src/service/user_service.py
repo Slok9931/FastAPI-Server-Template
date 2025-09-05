@@ -312,3 +312,30 @@ class UserService:
             db.rollback()
             logger.error(f"Error bulk deleting users: {e}")
             return 0
+    
+    @staticmethod
+    def get_user_count(
+        db: Session,
+        is_active: Optional[bool] = None,
+        role: Optional[str] = None,
+        search: Optional[str] = None
+    ) -> int:
+        """Get total count of users with optional filters"""
+        try:
+            query = db.query(User)
+            if is_active is not None:
+                query = query.filter(User.is_active == is_active)
+            if role:
+                query = query.join(User.roles).filter(Role.name == role)
+            if search:
+                search_term = f"%{search}%"
+                query = query.filter(
+                    or_(
+                        User.username.ilike(search_term),
+                        User.email.ilike(search_term)
+                    )
+                )
+            return query.count()
+        except Exception as e:
+            logger.error(f"Error getting user count: {e}")
+            return 0

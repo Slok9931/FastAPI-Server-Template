@@ -107,8 +107,6 @@ class ModuleService:
         """Get total count of modules with optional filters"""
         try:
             query = db.query(Module)
-            
-            # Apply search filter
             if search:
                 search_term = f"%{search}%"
                 query = query.filter(
@@ -118,11 +116,8 @@ class ModuleService:
                         Module.route.ilike(search_term)
                     )
                 )
-            
-            # Apply active filter
             if is_active is not None:
                 query = query.filter(Module.is_active == is_active)
-            
             return query.count()
         except Exception as e:
             logger.error(f"Error getting module count: {e}")

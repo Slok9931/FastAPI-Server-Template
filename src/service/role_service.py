@@ -203,3 +203,12 @@ class RoleService:
             db.rollback()
             logger.error(f"Error getting/creating default role: {e}")
             raise
+    
+    @staticmethod
+    def get_role_count(db: Session) -> int:
+        """Get total count of roles"""
+        try:
+            return db.query(Role).count()
+        except Exception as e:
+            logger.error(f"Error getting role count: {e}")
+            return 0

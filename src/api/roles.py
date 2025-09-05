@@ -39,6 +39,19 @@ async def create_role(
     except Exception as e:
         logger.error(f"Error creating role: {e}")
         raise HTTPException(status_code=500, detail="Failed to create role")
+    
+@router.get("/count", response_model=int)
+async def get_roles_count(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(has_permission("role", "read"))
+):
+    """Get total count of roles (Requires role:read permission)"""
+    try:
+        count = RoleService.get_role_count(db)
+        return count
+    except Exception as e:
+        logger.error(f"Error getting roles count: {e}")
+        raise HTTPException(status_code=500, detail="Unable to retrieve roles count")
 
 @router.get("/{role_id}", response_model=RoleResponse)
 async def get_role(

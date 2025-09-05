@@ -222,3 +222,19 @@ async def bulk_delete_users(
     except Exception as e:
         logger.error(f"Error bulk deleting users: {e}")
         raise HTTPException(status_code=500, detail="Unable to bulk delete users")
+
+@router.get("/count", response_model=int)
+async def get_users_count(
+    is_active: bool = None,
+    role: str = None,
+    search: str = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(has_permission("user", "read"))
+):
+    """Get total count of users with optional filters (Requires user:read permission)"""
+    try:
+        count = UserService.get_user_count(db, is_active=is_active, role=role, search=search)
+        return count
+    except Exception as e:
+        logger.error(f"Error getting users count: {e}")
+        raise HTTPException(status_code=500, detail="Unable to retrieve users count")

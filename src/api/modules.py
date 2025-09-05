@@ -197,3 +197,18 @@ async def bulk_delete_modules(
     except Exception as e:
         logger.error(f"Error bulk deleting modules: {e}")
         raise HTTPException(status_code=500, detail="Unable to bulk delete modules")
+
+@router.get("/count", response_model=int)
+async def get_modules_count(
+    search: str = None,
+    is_active: bool = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(has_permission("module", "read"))
+):
+    """Get total count of modules with optional filters (Requires module:read permission)"""
+    try:
+        count = ModuleService.get_module_count(db, search=search, is_active=is_active)
+        return count
+    except Exception as e:
+        logger.error(f"Error getting modules count: {e}")
+        raise HTTPException(status_code=500, detail="Unable to retrieve modules count")
