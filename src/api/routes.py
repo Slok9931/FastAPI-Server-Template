@@ -19,6 +19,7 @@ async def get_routes(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     module_id: int = Query(None, description="Filter by module ID"),
+    parent_id: int = Query(None, description="Filter by parent route ID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(has_permission("route", "read"))
 ):
@@ -26,6 +27,24 @@ async def get_routes(
     try:
         if module_id is not None:
             routes = RouteService.get_routes_by_module(db, module_id)
+            routes = [RouteListResponse(
+                id=route.id,
+                route=route.route,
+                label=route.label,
+                icon=route.icon,
+                is_active=route.is_active,
+                is_sidebar=route.is_sidebar,
+                module_id=route.module_id,
+                parent_id=route.parent_id,
+                priority=route.priority,
+                updated_at=route.updated_at,
+                created_at=route.created_at,
+                module_name=route.module.name if route.module else None,
+                parent_route=route.parent.route if route.parent else None,
+                children_count=len(route.children) if route.children else 0
+            ) for route in routes]
+        elif parent_id is not None:
+            routes = RouteService.get_routes_by_parent(db, parent_id)
             routes = [RouteListResponse(
                 id=route.id,
                 route=route.route,

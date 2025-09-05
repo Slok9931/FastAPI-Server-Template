@@ -103,6 +103,22 @@ class RouteService:
             return []
 
     @staticmethod
+    def get_routes_by_parent(db: Session, parent_id: int) -> List[Route]:
+        """Get all child routes for a specific parent route, sorted by priority"""
+        try:
+            query = db.query(Route).options(
+                joinedload(Route.module),
+                joinedload(Route.parent),
+                joinedload(Route.children)
+            )
+            if parent_id is not None:
+                query = query.filter(Route.parent_id == parent_id)
+            return query.order_by(Route.priority).all()
+        except Exception as e:
+            logger.error(f"Error getting routes by parent: {e}")
+            return []
+
+    @staticmethod
     def get_sidebar_routes(db: Session) -> List[SidebarModuleResponse]:
         """Get sidebar modules with their routes in tree structure, all sorted by priority"""
         try:
