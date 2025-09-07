@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from src.config.database import Base
+from src.models.route_role import route_roles
 
 class Route(Base):
     __tablename__ = "routes"
@@ -22,6 +23,7 @@ class Route(Base):
     module = relationship("Module", back_populates="routes")
     parent = relationship("Route", remote_side=[id], back_populates="children")
     children = relationship("Route", back_populates="parent", cascade="all, delete-orphan")
+    roles = relationship("Role", secondary=route_roles, back_populates="routes")
     
     def __repr__(self):
         return f"<Route(id={self.id}, route='{self.route}', label='{self.label}')>"

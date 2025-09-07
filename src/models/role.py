@@ -3,6 +3,8 @@ from sqlalchemy.orm import relationship
 from src.config.database import Base
 from src.models.user_role import user_roles
 from src.models.role_permission import role_permissions
+from src.models.module_role import module_roles
+from src.models.route_role import route_roles
 
 class Role(Base):
     __tablename__ = "roles"
@@ -15,6 +17,8 @@ class Role(Base):
     # Relationships
     users = relationship("User", secondary=user_roles, back_populates="roles")
     permissions = relationship("Permission", secondary=role_permissions, back_populates="roles", lazy="selectin")
+    modules = relationship("Module", secondary=module_roles, back_populates="roles", lazy="selectin")
+    routes = relationship("Route", secondary=route_roles, back_populates="roles", lazy="selectin")
     
     def __repr__(self):
         return f"<Role(id={self.id}, name='{self.name}', system={self.is_system_role})>"

@@ -4,6 +4,8 @@ from src.config.database import SessionLocal, engine
 from src.models.user import User
 from src.models.role import Role
 from src.models.permission import Permission
+from src.models.module import Module
+from src.models.route import Route
 from src.core.security import get_password_hash
 import logging
 
@@ -12,8 +14,8 @@ logger = logging.getLogger(__name__)
 def create_default_permissions(db: Session):
     """Create only the required standardized permissions"""
     
-    # Define only the 3 resources and 4 actions each (12 total)
-    resources = ["user", "role", "permission"]
+    # Define only the 3 resources and 4 actions each (20 total)
+    resources = ["user", "role", "permission", "module", "route"]
     actions = ["read", "create", "update", "delete"]
     
     # Create standardized permissions for each resource
@@ -108,11 +110,49 @@ def create_default_users(db: Session):
         db.add(basic_user)
         logger.info("Created basic user")
 
+def create_default_modules(db: Session):
+    """Create default modules"""
+    
+    # Create Admin module
+    admin_module = db.query(Module).filter(Module.name == "administration").first()
+    if not admin_module:
+        admin_module = Module(
+            name="administration",
+            label="Administration",
+            icon="ShieldUser",
+            route="/infinity/administration",
+            priority=1,
+            is_active=True
+        )
+        db.add(admin_module)
+        logger.info("Created admin module")
+
+def create_default_routes(db: Session):
+    """Create default routes"""
+    
+    # Get the admin module
+    admin_module = db.query(Module).filter(Module.name == "administration").first()
+    if admin_module:
+        # Create User Management route
+        user_management_route = db.query(Route).filter(Route.route == "/infinity/administration/accessControl").first()
+        if not user_management_route:
+            user_management_route = Route(
+                route="/infinity/administration/accessControl",
+                label="Access Control",
+                icon="GlobeLock",
+                priority=1,
+                is_active=True,
+                is_sidebar=True,
+                module_id=admin_module.id
+            )
+            db.add(user_management_route)
+            logger.info("Created user management route")
+
 def create_role_permission_associations(db: Session):
     """Create role-permission associations using SQL"""
     
     try:
-        # Insert role_permissions for superadmin (all 12 permissions)
+        # Insert role_permissions for superadmin (all 20 permissions)
         superadmin_query = text("""
             INSERT INTO role_permissions (role_id, permission_id)
             SELECT 
@@ -219,6 +259,52 @@ def create_user_role_associations(db: Session):
         logger.error(f"Error creating user-role associations: {e}")
         raise
 
+def create_module_role_associations(db: Session):
+    """Create module-role associations using SQL"""
+    
+    try:
+        # Assign admin module to superadmin role only
+        module_role_query = text("""
+            INSERT INTO module_roles (module_id, role_id)
+            SELECT 
+                (SELECT id FROM modules WHERE name = 'administration') as module_id,
+                (SELECT id FROM roles WHERE name = 'superadmin') as role_id
+            WHERE NOT EXISTS (
+                SELECT 1 FROM module_roles mr 
+                WHERE mr.module_id = (SELECT id FROM modules WHERE name = 'administration') 
+                AND mr.role_id = (SELECT id FROM roles WHERE name = 'superadmin')
+            )
+        """)
+        db.execute(module_role_query)
+        logger.info("Created module-role association for admin module")
+        
+    except Exception as e:
+        logger.error(f"Error creating module-role associations: {e}")
+        raise
+
+def create_route_role_associations(db: Session):
+    """Create route-role associations using SQL"""
+    
+    try:
+        # Assign user management route to superadmin role only
+        route_role_query = text("""
+            INSERT INTO route_roles (route_id, role_id)
+            SELECT 
+                (SELECT id FROM routes WHERE route = '/infinity/administration/accessControl') as route_id,
+                (SELECT id FROM roles WHERE name = 'superadmin') as role_id
+            WHERE NOT EXISTS (
+                SELECT 1 FROM route_roles rr 
+                WHERE rr.route_id = (SELECT id FROM routes WHERE route = '/infinity/administration/accessControl') 
+                AND rr.role_id = (SELECT id FROM roles WHERE name = 'superadmin')
+            )
+        """)
+        db.execute(route_role_query)
+        logger.info("Created route-role association for user management route")
+        
+    except Exception as e:
+        logger.error(f"Error creating route-role associations: {e}")
+        raise
+
 def init_database():
     """Initialize database with default data"""
     try:
@@ -245,15 +331,35 @@ def init_database():
             db.commit()
             logger.info("Users created successfully")
             
-            # Step 4: Create role-permission associations
+            # Step 4: Create modules
+            create_default_modules(db)
+            db.commit()
+            logger.info("Modules created successfully")
+            
+            # Step 5: Create routes
+            create_default_routes(db)
+            db.commit()
+            logger.info("Routes created successfully")
+            
+            # Step 6: Create role-permission associations
             create_role_permission_associations(db)
             db.commit()
             logger.info("Role-permission associations created successfully")
             
-            # Step 5: Create user-role associations
+            # Step 7: Create user-role associations
             create_user_role_associations(db)
             db.commit()
             logger.info("User-role associations created successfully")
+            
+            # Step 8: Create module-role associations
+            create_module_role_associations(db)
+            db.commit()
+            logger.info("Module-role associations created successfully")
+            
+            # Step 9: Create route-role associations
+            create_route_role_associations(db)
+            db.commit()
+            logger.info("Route-role associations created successfully")
             
             # Verify the data was created correctly
             verify_database_data(db)
@@ -284,6 +390,14 @@ def verify_database_data(db: Session):
     users_count = db.query(User).count()
     logger.info(f"Total users created: {users_count}")
     
+    # Check modules
+    modules_count = db.query(Module).count()
+    logger.info(f"Total modules created: {modules_count}")
+    
+    # Check routes
+    routes_count = db.query(Route).count()
+    logger.info(f"Total routes created: {routes_count}")
+    
     # Check role-permission associations
     role_perm_query = text("""
         SELECT r.name, COUNT(rp.permission_id) as permission_count 
@@ -305,6 +419,28 @@ def verify_database_data(db: Session):
     user_role_results = db.execute(user_role_query).fetchall()
     for result in user_role_results:
         logger.info(f"User '{result[0]}' has {result[1]} roles")
+    
+    # Check module-role associations
+    module_role_query = text("""
+        SELECT m.name, COUNT(mr.role_id) as role_count 
+        FROM modules m 
+        LEFT JOIN module_roles mr ON m.id = mr.module_id 
+        GROUP BY m.name
+    """)
+    module_role_results = db.execute(module_role_query).fetchall()
+    for result in module_role_results:
+        logger.info(f"Module '{result[0]}' has {result[1]} roles")
+    
+    # Check route-role associations
+    route_role_query = text("""
+        SELECT r.route, COUNT(rr.role_id) as role_count 
+        FROM routes r 
+        LEFT JOIN route_roles rr ON r.id = rr.route_id 
+        GROUP BY r.route
+    """)
+    route_role_results = db.execute(route_role_query).fetchall()
+    for result in route_role_results:
+        logger.info(f"Route '{result[0]}' has {result[1]} roles")
 
 # For direct execution
 if __name__ == "__main__":

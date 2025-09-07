@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from src.config.database import get_db
 from src.schemas import (
     RouteResponse, RouteCreate, RouteUpdate, RouteListResponse, 
-    SidebarModuleResponse, MessageResponse
+    SidebarModuleResponse, MessageResponse, RoleInfo
 )
 from src.models import User
 from src.service import RouteService
@@ -37,11 +37,11 @@ async def get_routes(
                 module_id=route.module_id,
                 parent_id=route.parent_id,
                 priority=route.priority,
-                updated_at=route.updated_at,
                 created_at=route.created_at,
                 module_name=route.module.name if route.module else None,
                 parent_route=route.parent.route if route.parent else None,
-                children_count=len(route.children) if route.children else 0
+                children_count=len(route.children) if route.children else 0,
+                roles=[RoleInfo(id=role.id, name=role.name, description=role.description) for role in route.roles] if route.roles else []
             ) for route in routes]
         elif parent_id is not None:
             routes = RouteService.get_routes_by_parent(db, parent_id)
@@ -55,31 +55,15 @@ async def get_routes(
                 module_id=route.module_id,
                 parent_id=route.parent_id,
                 priority=route.priority,
-                updated_at=route.updated_at,
                 created_at=route.created_at,
                 module_name=route.module.name if route.module else None,
                 parent_route=route.parent.route if route.parent else None,
-                children_count=len(route.children) if route.children else 0
+                children_count=len(route.children) if route.children else 0,
+                roles=[RoleInfo(id=role.id, name=role.name, description=role.description) for role in route.roles] if route.roles else []
             ) for route in routes]
         else:
-            # Return all routes (not just details)
-            routes = RouteService.get_all_routes(db, skip=skip, limit=limit)
-            routes = [RouteListResponse(
-                id=route.id,
-                route=route.route,
-                label=route.label,
-                icon=route.icon,
-                is_active=route.is_active,
-                is_sidebar=route.is_sidebar,
-                module_id=route.module_id,
-                parent_id=route.parent_id,
-                priority=route.priority,
-                updated_at=route.updated_at,
-                created_at=route.created_at,
-                module_name=route.module.name if route.module else None,
-                parent_route=route.parent.route if route.parent else None,
-                children_count=len(route.children) if route.children else 0
-            ) for route in routes]
+            # Return all routes with details
+            routes = RouteService.get_all_routes_with_details(db, skip=skip, limit=limit)
         return routes
     except Exception as e:
         logger.error(f"Error getting routes: {e}")
@@ -90,9 +74,9 @@ async def get_sidebar_routes(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get sidebar menu routes (Requires authentication only)"""
+    """Get sidebar menu routes based on user roles (Requires authentication only)"""
     try:
-        sidebar_routes = RouteService.get_sidebar_routes(db)
+        sidebar_routes = RouteService.get_sidebar_routes(db, current_user)
         return sidebar_routes
     except Exception as e:
         logger.error(f"Error getting sidebar routes: {e}")

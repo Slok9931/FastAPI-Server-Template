@@ -14,11 +14,11 @@ from src.schemas.permission import (
 )
 from src.schemas.module import (
     ModuleBase, ModuleCreate, ModuleUpdate, ModuleResponse, 
-    ModuleListResponse
+    ModuleListResponse, RoleInfo
 )
 from src.schemas.route import (
     RouteBase, RouteCreate, RouteUpdate, RouteResponse,
-    RouteListResponse, SidebarRouteResponse, SidebarModuleResponse, RouteCreateResponse
+    RouteListResponse, SidebarRouteResponse, SidebarModuleResponse, RouteCreateResponse, RoleInfo
 )
 from src.schemas.dynamic_model import (
     DynamicDataCreate, DynamicDataResponse, DynamicDataUpdate, DynamicFieldBase, DynamicFieldCreate, DynamicFieldResponse, DynamicFieldUpdate, DynamicModelBase, DynamicModelCreate, DynamicModelListResponse, DynamicModelResponse, DynamicModelUpdate
@@ -41,11 +41,11 @@ __all__ = [
     
     # Module schemas
     "ModuleBase", "ModuleCreate", "ModuleUpdate", "ModuleResponse", 
-    "ModuleListResponse",
+    "ModuleListResponse", "RoleInfo"
     
     # Route schemas
     "RouteBase", "RouteCreate", "RouteUpdate", "RouteResponse",
-    "RouteListResponse", "SidebarRouteResponse", "SidebarModuleResponse", "RouteCreateResponse",
+    "RouteListResponse", "SidebarRouteResponse", "SidebarModuleResponse", "RouteCreateResponse", "RoleInfo"
 
     #dynamic_model schemas
     "DynamicDataCreate", "DynamicDataResponse", "DynamicDataUpdate", "DynamicFieldBase", "DynamicFieldCreate", "DynamicFieldResponse", "DynamicFieldUpdate", "DynamicModelBase", "DynamicModelCreate", "DynamicModelListResponse", "DynamicModelResponse", "DynamicModelUpdate"

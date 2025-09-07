@@ -2,8 +2,8 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from typing import List, Optional
 import logging
-from src.models import Route, Module
-from src.schemas import RouteCreate, RouteUpdate, RouteListResponse, SidebarRouteResponse, SidebarModuleResponse
+from src.models import Route, Module, User, Role
+from src.schemas import RouteCreate, RouteUpdate, RouteListResponse, SidebarRouteResponse, SidebarModuleResponse, RoleInfo
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,8 @@ class RouteService:
             return db.query(Route).options(
                 joinedload(Route.module),
                 joinedload(Route.parent),
-                joinedload(Route.children)
+                joinedload(Route.children),
+                joinedload(Route.roles)
             ).order_by(Route.priority).offset(skip).limit(limit).all()
         except Exception as e:
             logger.error(f"Error getting routes: {e}")
@@ -25,32 +26,17 @@ class RouteService:
     def get_all_routes_with_details(db: Session, skip: int = 0, limit: int = 100) -> List[RouteListResponse]:
         """Get all routes with module and parent details, sorted by priority"""
         try:
-            routes_query = db.query(
-                Route.id,
-                Route.route,
-                Route.label,
-                Route.icon,
-                Route.is_active,
-                Route.is_sidebar,
-                Route.module_id,
-                Route.parent_id,
-                Route.priority,
-                Route.created_at,
-                Module.name.label('module_name'),
-                func.count(Route.children).label('children_count')
-            ).join(Module).outerjoin(Route.children).group_by(
-                Route.id, Module.name
-            ).order_by(Route.priority).offset(skip).limit(limit)
+            routes = db.query(Route).options(
+                joinedload(Route.module),
+                joinedload(Route.parent),
+                joinedload(Route.children),
+                joinedload(Route.roles)
+            ).order_by(Route.priority).offset(skip).limit(limit).all()
             
-            routes = routes_query.all()
-            
-            # Get parent route info separately
+            # Convert to response format
             route_list = []
             for route in routes:
-                parent_route = None
-                if route.parent_id:
-                    parent = db.query(Route.route).filter(Route.id == route.parent_id).first()
-                    parent_route = parent.route if parent else None
+                roles = [RoleInfo(id=role.id, name=role.name, description=role.description) for role in route.roles] if route.roles else []
                 
                 route_list.append(RouteListResponse(
                     id=route.id,
@@ -63,9 +49,10 @@ class RouteService:
                     parent_id=route.parent_id,
                     priority=route.priority,
                     created_at=route.created_at,
-                    module_name=route.module_name,
-                    parent_route=parent_route,
-                    children_count=route.children_count or 0
+                    module_name=route.module.name if route.module else None,
+                    parent_route=route.parent.route if route.parent else None,
+                    children_count=len(route.children) if route.children else 0,
+                    roles=roles
                 ))
             
             return route_list
@@ -80,7 +67,8 @@ class RouteService:
             return db.query(Route).options(
                 joinedload(Route.module),
                 joinedload(Route.parent),
-                joinedload(Route.children)
+                joinedload(Route.children),
+                joinedload(Route.roles)
             ).filter(Route.id == route_id).first()
         except Exception as e:
             logger.error(f"Error getting route by ID: {e}")
@@ -93,7 +81,8 @@ class RouteService:
             query = db.query(Route).options(
                 joinedload(Route.module),
                 joinedload(Route.parent),
-                joinedload(Route.children)
+                joinedload(Route.children),
+                joinedload(Route.roles)
             )
             if module_id is not None:
                 query = query.filter(Route.module_id == module_id)
@@ -109,7 +98,8 @@ class RouteService:
             query = db.query(Route).options(
                 joinedload(Route.module),
                 joinedload(Route.parent),
-                joinedload(Route.children)
+                joinedload(Route.children),
+                joinedload(Route.roles)
             )
             if parent_id is not None:
                 query = query.filter(Route.parent_id == parent_id)
@@ -119,61 +109,99 @@ class RouteService:
             return []
 
     @staticmethod
-    def get_sidebar_routes(db: Session) -> List[SidebarModuleResponse]:
-        """Get sidebar modules with their routes in tree structure, all sorted by priority"""
+    def get_sidebar_routes(db: Session, current_user: User) -> List[SidebarModuleResponse]:
+        """Get sidebar modules with their routes in tree structure based on user roles, all sorted by priority"""
         try:
-            # Get all active modules sorted by priority
-            modules = db.query(Module).filter(Module.is_active == True).order_by(Module.priority).all()
+            # Get user's role IDs
+            user_role_ids = [role.id for role in current_user.roles]
+            logger.info(f"User {current_user.username} has role IDs: {user_role_ids}")
+            
+            if not user_role_ids:
+                logger.info("User has no roles, returning empty sidebar")
+                return []
+            
+            # Get all active modules with their roles loaded
+            all_modules = db.query(Module).options(
+                joinedload(Module.roles)
+            ).filter(Module.is_active == True).order_by(Module.priority).all()
+            
+            # Filter modules based on user roles
+            accessible_modules = []
+            for module in all_modules:
+                module_role_ids = [role.id for role in module.roles]
+                if any(role_id in user_role_ids for role_id in module_role_ids):
+                    accessible_modules.append(module)
+            
+            logger.info(f"Found {len(accessible_modules)} accessible modules")
+            
             result = []
 
-            for module in modules:
-                # Get parent routes for this module (no parent_id, is_sidebar, is_active), sorted by priority
-                parent_routes = db.query(Route).options(
-                    joinedload(Route.children)
+            for module in accessible_modules:
+                logger.info(f"Processing module: {module.name}")
+                
+                # Get all routes for this module with their roles loaded
+                all_routes = db.query(Route).options(
+                    joinedload(Route.children),
+                    joinedload(Route.roles)
                 ).filter(
                     Route.module_id == module.id,
                     Route.parent_id.is_(None),
                     Route.is_sidebar == True,
                     Route.is_active == True
                 ).order_by(Route.priority).all()
+                
+                # Filter parent routes based on user roles
+                accessible_parent_routes = []
+                for route in all_routes:
+                    route_role_ids = [role.id for role in route.roles]
+                    if any(role_id in user_role_ids for role_id in route_role_ids):
+                        accessible_parent_routes.append(route)
 
                 def build_route_tree(route):
-                    # Recursively build children sorted by priority
-                    children = sorted(
-                        [
-                            build_route_tree(child)
-                            for child in route.children
-                            if child.is_active and child.is_sidebar
-                        ],
-                        key=lambda r: r.priority if hasattr(r, 'priority') else 0
-                    )
+                    # Get accessible children for this route
+                    accessible_children = []
+                    for child in route.children:
+                        if (child.is_active and child.is_sidebar):
+                            child_role_ids = [role.id for role in child.roles]
+                            if any(role_id in user_role_ids for role_id in child_role_ids):
+                                accessible_children.append(build_route_tree(child))
+                    
+                    # Sort children by priority
+                    accessible_children.sort(key=lambda r: r.priority if hasattr(r, 'priority') else 0)
+                    
                     return SidebarRouteResponse(
                         id=route.id,
                         route=route.route,
                         label=route.label,
-                        icon=route.icon,
+                        icon=route.icon or "",
                         module_name=module.name,
                         priority=route.priority,
-                        children=children
+                        children=accessible_children
                     )
 
-                routes_tree = [build_route_tree(route) for route in parent_routes]
+                routes_tree = [build_route_tree(route) for route in accessible_parent_routes]
+                logger.info(f"Module {module.name} has {len(routes_tree)} accessible routes")
+                
+                # Only include modules that have accessible routes
+                if routes_tree:
+                    result.append(SidebarModuleResponse(
+                        id=module.id,
+                        name=module.name,
+                        label=module.label,
+                        icon=module.icon or "",
+                        route=module.route,
+                        is_active=module.is_active,
+                        priority=module.priority,
+                        routes=routes_tree
+                    ))
 
-                result.append(SidebarModuleResponse(
-                    id=module.id,
-                    name=module.name,
-                    label=module.label,
-                    icon=module.icon,
-                    route=module.route,
-                    is_active=module.is_active,
-                    priority=module.priority,
-                    routes=routes_tree
-                ))
-
+            logger.info(f"User {current_user.username} has access to {len(result)} modules in sidebar")
             return result
 
         except Exception as e:
             logger.error(f"Error getting sidebar routes: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return []
     
     @staticmethod
@@ -204,6 +232,16 @@ class RouteService:
                 
                 logger.info(f"Parent route found: {parent_route.route}")
             
+            # Validate role IDs if provided
+            roles = []
+            if route_data.role_ids:
+                roles = db.query(Role).filter(Role.id.in_(route_data.role_ids)).all()
+                found_role_ids = [role.id for role in roles]
+                missing_role_ids = set(route_data.role_ids) - set(found_role_ids)
+                if missing_role_ids:
+                    raise ValueError(f"Role IDs not found: {sorted(missing_role_ids)}")
+                logger.info(f"Found {len(roles)} roles for assignment")
+            
             # Check if route path already exists in the same module
             existing_route = db.query(Route).filter(
                 Route.route == route_data.route,
@@ -225,6 +263,9 @@ class RouteService:
                 priority=route_data.priority
             )
             
+            # Assign roles
+            db_route.roles = roles
+            
             logger.info(f"Route object created: {db_route}")
             
             db.add(db_route)
@@ -236,18 +277,19 @@ class RouteService:
             db.refresh(db_route)
             logger.info(f"Route refreshed with ID: {db_route.id}")
             
-            # ✅ Load the route with all relationships
+            # Load the route with all relationships
             created_route = db.query(Route).options(
                 joinedload(Route.module),
                 joinedload(Route.parent),
-                joinedload(Route.children)
+                joinedload(Route.children),
+                joinedload(Route.roles)
             ).filter(Route.id == db_route.id).first()
             
             if not created_route:
                 logger.error("Failed to retrieve created route")
                 raise ValueError("Failed to create route - could not retrieve created object")
             
-            logger.info(f"Route created successfully: {created_route.route} (ID: {created_route.id}) in module {module.name}")
+            logger.info(f"Route created successfully: {created_route.route} (ID: {created_route.id}) in module {module.name} with {len(roles)} roles assigned")
             return created_route
             
         except ValueError as ve:
@@ -263,7 +305,7 @@ class RouteService:
     def update_route(db: Session, route_id: int, route_update: RouteUpdate) -> Optional[Route]:
         """Update route"""
         try:
-            db_route = db.query(Route).filter(Route.id == route_id).first()
+            db_route = db.query(Route).options(joinedload(Route.roles)).filter(Route.id == route_id).first()
             if not db_route:
                 return None
             
@@ -288,6 +330,19 @@ class RouteService:
                 if parent_route.module_id != module_id:
                     raise ValueError("Parent route must be in the same module")
             
+            # Validate and update roles if provided
+            if route_update.role_ids is not None:
+                if route_update.role_ids:  # If list is not empty
+                    roles = db.query(Role).filter(Role.id.in_(route_update.role_ids)).all()
+                    found_role_ids = [role.id for role in roles]
+                    missing_role_ids = set(route_update.role_ids) - set(found_role_ids)
+                    if missing_role_ids:
+                        raise ValueError(f"Role IDs not found: {sorted(missing_role_ids)}")
+                    db_route.roles = roles
+                else:  # Empty list means remove all roles
+                    db_route.roles = []
+                logger.info(f"Route {db_route.route} roles updated to: {[role.name for role in db_route.roles]}")
+            
             # Check if route path already exists (if route is being updated)
             if route_update.route:
                 module_id = route_update.module_id or db_route.module_id
@@ -299,8 +354,8 @@ class RouteService:
                 if existing_route:
                     raise ValueError(f"Route '{route_update.route}' already exists in this module")
             
-            # Update fields
-            update_data = route_update.dict(exclude_unset=True)
+            # Update other fields
+            update_data = route_update.dict(exclude_unset=True, exclude={'role_ids'})
             for field, value in update_data.items():
                 setattr(db_route, field, value)
             

@@ -6,7 +6,7 @@ import logging
 from src.config.database import get_db
 from src.schemas import (
     ModuleResponse, ModuleCreate, ModuleUpdate, 
-    ModuleListResponse, MessageResponse
+    ModuleListResponse, MessageResponse, RoleInfo
 )
 from src.models import User, Module
 from src.service import ModuleService
@@ -55,7 +55,8 @@ async def get_modules(
                 priority=module.priority,
                 is_active=module.is_active,
                 created_at=module.created_at,
-                route_count=0
+                route_count=0,
+                roles=[RoleInfo(id=role.id, name=role.name, description=role.description) for role in module.roles] if module.roles else []
             ) for module in modules]
         return modules
     except Exception as e:
