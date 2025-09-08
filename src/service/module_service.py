@@ -85,7 +85,7 @@ class ModuleService:
             for module in modules:
                 # Get roles for this module
                 module_obj = db.query(Module).options(joinedload(Module.roles)).filter(Module.id == module.id).first()
-                roles = [RoleInfo(id=role.id, name=role.name, description=role.description) for role in module_obj.roles] if module_obj and module_obj.roles else []
+                roles = [RoleInfo(id=role.id, name=role.name, description=role.description).model_dump() for role in module_obj.roles] if module_obj and module_obj.roles else []
                 
                 result.append(ModuleListResponse(
                     id=module.id,

@@ -124,15 +124,13 @@ class RouteService:
             all_modules = db.query(Module).options(
                 joinedload(Module.roles)
             ).filter(Module.is_active == True).order_by(Module.priority).all()
-            
+
             # Filter modules based on user roles
             accessible_modules = []
             for module in all_modules:
                 module_role_ids = [role.id for role in module.roles]
                 if any(role_id in user_role_ids for role_id in module_role_ids):
                     accessible_modules.append(module)
-            
-            logger.info(f"Found {len(accessible_modules)} accessible modules")
             
             result = []
 
@@ -182,18 +180,16 @@ class RouteService:
                 routes_tree = [build_route_tree(route) for route in accessible_parent_routes]
                 logger.info(f"Module {module.name} has {len(routes_tree)} accessible routes")
                 
-                # Only include modules that have accessible routes
-                if routes_tree:
-                    result.append(SidebarModuleResponse(
-                        id=module.id,
-                        name=module.name,
-                        label=module.label,
-                        icon=module.icon or "",
-                        route=module.route,
-                        is_active=module.is_active,
-                        priority=module.priority,
-                        routes=routes_tree
-                    ))
+                result.append(SidebarModuleResponse(
+                    id=module.id,
+                    name=module.name,
+                    label=module.label,
+                    icon=module.icon or "",
+                    route=module.route,
+                    is_active=module.is_active,
+                    priority=module.priority,
+                    routes=routes_tree
+                ))
 
             logger.info(f"User {current_user.username} has access to {len(result)} modules in sidebar")
             return result
