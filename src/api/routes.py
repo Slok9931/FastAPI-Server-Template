@@ -131,6 +131,7 @@ async def create_route(
             return response
         except Exception as conversion_error:
             logger.error(f"API: Error converting to response model: {conversion_error}")
+            # Manual response construction with roles included
             return RouteResponse(
                 id=new_route.id,
                 route=new_route.route,
@@ -143,7 +144,10 @@ async def create_route(
                 priority=new_route.priority,
                 created_at=new_route.created_at,
                 updated_at=new_route.updated_at,
-                children=[]
+                module=None,
+                parent=None,
+                children=[],
+                roles=[RoleInfo(id=role.id, name=role.name, description=role.description) for role in new_route.roles] if new_route.roles else []
             )
         
     except ValueError as e:
@@ -193,6 +197,7 @@ async def update_route(
             return response
         except Exception as conversion_error:
             logger.error(f"API: Error converting updated route to response model: {conversion_error}")
+            # Manual response construction with roles included
             return RouteResponse(
                 id=updated_route.id,
                 route=updated_route.route,
@@ -205,7 +210,10 @@ async def update_route(
                 priority=updated_route.priority,
                 created_at=updated_route.created_at,
                 updated_at=updated_route.updated_at,
-                children=[]
+                module=None,
+                parent=None,
+                children=[],
+                roles=[RoleInfo(id=role.id, name=role.name, description=role.description) for role in updated_route.roles] if updated_route.roles else []
             )
         
     except ValueError as e:
