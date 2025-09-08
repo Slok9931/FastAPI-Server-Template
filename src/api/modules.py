@@ -85,11 +85,23 @@ async def create_module(
     """Create new module (Requires module:create permission)"""
     try:
         new_module = ModuleService.create_module(db, module_data)
-        return ModuleResponse.from_orm(new_module)
+        # Convert the module to dict and then back to ensure proper serialization
+        module_dict = {
+            "id": new_module.id,
+            "name": new_module.name,
+            "label": new_module.label,
+            "icon": new_module.icon,
+            "route": new_module.route,
+            "priority": new_module.priority,
+            "is_active": new_module.is_active,
+            "created_at": new_module.created_at,
+            "updated_at": new_module.updated_at,
+            "roles": [{"id": role.id, "name": role.name, "description": role.description} for role in (new_module.roles or [])]
+        }
+        return ModuleResponse(**module_dict)
     except ValueError as e:
-        if "already exists" in str(e).lower():
-            raise HTTPException(status_code=400, detail="Module name already exists")
-        raise HTTPException(status_code=400, detail="Invalid module information provided")
+        # Pass through the specific error message from the service
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error creating module: {e}")
         raise HTTPException(status_code=500, detail="Unable to create module")
@@ -124,11 +136,24 @@ async def update_module(
         updated_module = ModuleService.update_module(db, module_id, module_update)
         if not updated_module:
             raise HTTPException(status_code=404, detail="Module not found")
-        return ModuleResponse.from_orm(updated_module)
+        
+        # Convert the module to dict and then back to ensure proper serialization
+        module_dict = {
+            "id": updated_module.id,
+            "name": updated_module.name,
+            "label": updated_module.label,
+            "icon": updated_module.icon,
+            "route": updated_module.route,
+            "priority": updated_module.priority,
+            "is_active": updated_module.is_active,
+            "created_at": updated_module.created_at,
+            "updated_at": updated_module.updated_at,
+            "roles": [{"id": role.id, "name": role.name, "description": role.description} for role in (updated_module.roles or [])]
+        }
+        return ModuleResponse(**module_dict)
     except ValueError as e:
-        if "already exists" in str(e).lower():
-            raise HTTPException(status_code=400, detail="Module name already exists")
-        raise HTTPException(status_code=400, detail="Invalid module information provided")
+        # Pass through the specific error message from the service
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:

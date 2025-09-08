@@ -206,8 +206,7 @@ class ModuleService:
             
             # Load the module with all relationships for return
             created_module = db.query(Module).options(
-                joinedload(Module.roles),
-                joinedload(Module.routes)
+                joinedload(Module.roles)
             ).filter(Module.id == db_module.id).first()
             
             if not created_module:
