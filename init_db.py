@@ -134,10 +134,10 @@ def create_default_routes(db: Session):
     admin_module = db.query(Module).filter(Module.name == "administration").first()
     if admin_module:
         # Create User Management route
-        user_management_route = db.query(Route).filter(Route.route == "/infinity/administration/accessControl").first()
+        user_management_route = db.query(Route).filter(Route.route == "/infinity/administration/accessControls").first()
         if not user_management_route:
             user_management_route = Route(
-                route="/infinity/administration/accessControl",
+                route="/infinity/administration/accessControls",
                 label="Access Control",
                 icon="GlobeLock",
                 priority=1,
@@ -290,11 +290,11 @@ def create_route_role_associations(db: Session):
         route_role_query = text("""
             INSERT INTO route_roles (route_id, role_id)
             SELECT 
-                (SELECT id FROM routes WHERE route = '/infinity/administration/accessControl') as route_id,
+                (SELECT id FROM routes WHERE route = '/infinity/administration/accessControls') as route_id,
                 (SELECT id FROM roles WHERE name = 'superadmin') as role_id
             WHERE NOT EXISTS (
                 SELECT 1 FROM route_roles rr 
-                WHERE rr.route_id = (SELECT id FROM routes WHERE route = '/infinity/administration/accessControl') 
+                WHERE rr.route_id = (SELECT id FROM routes WHERE route = '/infinity/administration/accessControls') 
                 AND rr.role_id = (SELECT id FROM roles WHERE name = 'superadmin')
             )
         """)
