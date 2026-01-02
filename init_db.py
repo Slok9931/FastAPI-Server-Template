@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 def create_default_permissions(db: Session):
     """Create only the required standardized permissions"""
     
-    # Define only the 3 resources and 4 actions each (20 total)
+    # Define only the 5 resources and 4 actions each (20 total)
     resources = ["user", "role", "permission", "module", "route"]
     actions = ["read", "create", "update", "delete"]
     
@@ -113,6 +113,19 @@ def create_default_users(db: Session):
 def create_default_modules(db: Session):
     """Create default modules"""
     
+    # Create Dashboard module
+    dashboard_module = db.query(Module).filter(Module.name == "dashboard").first()
+    if not dashboard_module:
+        dashboard_module = Module(
+            name="dashboard",
+            label="Dashboard",
+            icon="LayoutDashboard",
+            route="/infinity/dashboard",
+            priority=0,
+            is_active=True
+        )
+        db.add(dashboard_module)
+        logger.info("Created dashboard module")
     # Create Admin module
     admin_module = db.query(Module).filter(Module.name == "administration").first()
     if not admin_module:
@@ -128,25 +141,126 @@ def create_default_modules(db: Session):
         logger.info("Created admin module")
 
 def create_default_routes(db: Session):
-    """Create default routes"""
+    """Create default routes and assign them to superadmin role"""
     
     # Get the admin module
     admin_module = db.query(Module).filter(Module.name == "administration").first()
-    if admin_module:
-        # Create User Management route
-        user_management_route = db.query(Route).filter(Route.route == "/infinity/administration/accessControls").first()
-        if not user_management_route:
-            user_management_route = Route(
-                route="/infinity/administration/accessControls",
-                label="Access Control",
-                icon="GlobeLock",
-                priority=1,
-                is_active=True,
-                is_sidebar=True,
-                module_id=admin_module.id
-            )
-            db.add(user_management_route)
-            logger.info("Created user management route")
+    superadmin_role = db.query(Role).filter(Role.name == "superadmin").first()
+    if admin_module and superadmin_role:
+        # Define all default admin routes (replace 'infinity' with 'infinity')
+        default_routes = [
+            {
+                "route": "/infinity/administration/accessControls",
+                "label": "Access Control",
+                "icon": "GlobeLock",
+                "priority": 0,
+                "is_sidebar": True,
+                "parent_route": None
+            },
+            {
+                "route": "/infinity/administration/accessControls/users",
+                "label": "Users",
+                "icon": "UsersRound",
+                "priority": 0,
+                "is_sidebar": True,
+                "parent_route": "/infinity/administration/accessControls"
+            },
+            {
+                "route": "/infinity/administration/accessControls/roles",
+                "label": "Roles",
+                "icon": "Cable",
+                "priority": 1,
+                "is_sidebar": True,
+                "parent_route": "/infinity/administration/accessControls"
+            },
+            {
+                "route": "/infinity/administration/accessControls/permissions",
+                "label": "Permissions",
+                "icon": "FolderLock",
+                "priority": 2,
+                "is_sidebar": True,
+                "parent_route": "/infinity/administration/accessControls"
+            },
+            {
+                "route": "/infinity/administration/pages",
+                "label": "Pages",
+                "icon": "Layers",
+                "priority": 1,
+                "is_sidebar": True,
+                "parent_route": None
+            },
+            {
+                "route": "/infinity/administration/pages/modules",
+                "label": "Modules",
+                "icon": "Boxes",
+                "priority": 0,
+                "is_sidebar": True,
+                "parent_route": "/infinity/administration/pages"
+            },
+            {
+                "route": "/infinity/administration/pages/routes",
+                "label": "Routes",
+                "icon": "GitFork",
+                "priority": 1,
+                "is_sidebar": True,
+                "parent_route": "/infinity/administration/pages"
+            },
+        ]
+
+        # Helper: get parent route object
+        route_objs = {}
+        for route_data in default_routes:
+            parent_id = None
+            if route_data["parent_route"]:
+                parent_obj = route_objs.get(route_data["parent_route"])
+                if parent_obj:
+                    parent_id = parent_obj.id
+                else:
+                    # Try to fetch from DB if not in local dict
+                    parent_db_obj = db.query(Route).filter(Route.route == route_data["parent_route"]).first()
+                    if parent_db_obj:
+                        parent_id = parent_db_obj.id
+            # Check if route exists
+            existing_route = db.query(Route).filter(Route.route == route_data["route"]).first()
+            if not existing_route:
+                new_route = Route(
+                    route=route_data["route"],
+                    label=route_data["label"],
+                    icon=route_data["icon"],
+                    priority=route_data["priority"],
+                    is_active=True,
+                    is_sidebar=route_data["is_sidebar"],
+                    module_id=admin_module.id,
+                    parent_id=parent_id
+                )
+                db.add(new_route)
+                db.flush()  # get id
+                route_objs[route_data["route"]] = new_route
+                logger.info(f"Created admin route: {route_data['route']}")
+                # Assign to superadmin role
+                db.execute(
+                    text("""
+                        INSERT INTO route_roles (route_id, role_id)
+                        VALUES (:route_id, :role_id)
+                        ON CONFLICT DO NOTHING
+                    """),
+                    {"route_id": new_route.id, "role_id": superadmin_role.id}
+                )
+                logger.info(f"Assigned route {route_data['route']} to superadmin role")
+            else:
+                route_objs[route_data["route"]] = existing_route
+                # Ensure superadmin role is assigned
+                db.execute(
+                    text("""
+                        INSERT INTO route_roles (route_id, role_id)
+                        SELECT :route_id, :role_id
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM route_roles WHERE route_id = :route_id AND role_id = :role_id
+                        )
+                    """),
+                    {"route_id": existing_route.id, "role_id": superadmin_role.id}
+                )
+                logger.info(f"Ensured route {route_data['route']} is assigned to superadmin role")
 
 def create_role_permission_associations(db: Session):
     """Create role-permission associations using SQL"""
@@ -263,6 +377,20 @@ def create_module_role_associations(db: Session):
     """Create module-role associations using SQL"""
     
     try:
+        # Assign dashboard module to all roles
+        dashboard_module_role_query = text("""
+            INSERT INTO module_roles (module_id, role_id)
+            SELECT m.id, r.id
+            FROM modules m, roles r
+            WHERE m.name = 'dashboard'
+            AND NOT EXISTS (
+                SELECT 1 FROM module_roles mr 
+                WHERE mr.module_id = m.id AND mr.role_id = r.id
+            )
+        """)
+        db.execute(dashboard_module_role_query)
+        logger.info("Created module-role associations for dashboard module (all roles)")
+
         # Assign admin module to superadmin role only
         module_role_query = text("""
             INSERT INTO module_roles (module_id, role_id)

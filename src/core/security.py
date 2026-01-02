@@ -8,7 +8,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(
+    schemes=["bcrypt"], 
+    deprecated="auto",
+    bcrypt__rounds=12  # Explicit rounds configuration
+)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
@@ -21,6 +25,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def get_password_hash(password: str) -> str:
     """Hash a password"""
     try:
+        # Bcrypt has a 72-byte limit, so we need to truncate if necessary
+        # Encode to bytes to check the actual byte length
+        password_bytes = password.encode('utf-8')
+        if len(password_bytes) > 72:
+            # Truncate to 72 bytes while preserving valid UTF-8
+            password = password_bytes[:72].decode('utf-8', errors='ignore')
+            logger.warning(f"Password was truncated to 72 bytes for bcrypt compatibility")
+        
         return pwd_context.hash(password)
     except Exception as e:
         logger.error(f"Error hashing password: {e}")
